@@ -221,5 +221,23 @@ namespace CodexQuotaBall
         {
             return codexRunning && manuallyHiddenForCurrentCodexSession;
         }
+
+        public static bool ShouldStopOrb(
+            bool followCodexEnabled,
+            bool codexRunning,
+            bool uiRunning,
+            bool launchPending)
+        {
+            return followCodexEnabled
+                && !codexRunning
+                && (uiRunning || launchPending);
+        }
+
+        public static bool ShouldShowTrayIcon(
+            bool followCodexEnabled,
+            bool codexRunning)
+        {
+            return followCodexEnabled && codexRunning;
+        }
     }
 }

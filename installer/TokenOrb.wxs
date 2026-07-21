@@ -43,22 +43,25 @@
                   Type="string"
                   Value="[#TokenOrbExecutable]"
                   KeyPath="yes" />
-              <RegistryValue
-                  Root="HKCU"
-                  Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                  Name="Token Orb"
-                  Type="string"
-                  Value="&quot;[#TokenOrbExecutable]&quot; --watch" />
-              <RemoveRegistryValue
-                  Id="RemoveLegacyAutoStart"
-                  Root="HKCU"
-                  Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                  Name="CodexQuotaBall" />
               <RemoveFolder Id="RemoveTokenOrbInstallFolder" On="uninstall" />
               <RemoveFolder
                   Id="RemoveEmptyLocalProgramsFolder"
                   Directory="LocalProgramsFolder"
                   On="uninstall" />
+            </Component>
+            <Component Id="TokenOrbAutoStartComponent" Guid="{86269AD8-3C73-45AA-87CE-FBB1BC5D8221}">
+              <RegistryValue
+                  Root="HKCU"
+                  Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                  Name="Token Orb"
+                  Type="string"
+                  Value="&quot;[INSTALLFOLDER]TokenOrb.exe&quot; --watch"
+                  KeyPath="yes" />
+              <RemoveRegistryValue
+                  Id="RemoveLegacyAutoStart"
+                  Root="HKCU"
+                  Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                  Name="CodexQuotaBall" />
             </Component>
           </Directory>
         </Directory>
@@ -89,6 +92,7 @@
 
     <Feature Id="TokenOrbFeature" Title="Token Orb" Level="1" Absent="disallow">
       <ComponentRef Id="TokenOrbExecutableComponent" />
+      <ComponentRef Id="TokenOrbAutoStartComponent" />
       <ComponentRef Id="TokenOrbShortcutComponent" />
     </Feature>
   </Product>

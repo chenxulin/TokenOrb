@@ -210,6 +210,7 @@ $applicationSources = @(
     (Join-Path $sourceDirectory "BallPositioning.cs"),
     (Join-Path $sourceDirectory "UiControls.cs"),
     (Join-Path $sourceDirectory "UiHelpers.cs"),
+    (Join-Path $sourceDirectory "FollowCodexStartupBehavior.cs"),
     (Join-Path $sourceDirectory "CodexProcessMonitor.cs"),
     (Join-Path $sourceDirectory "AppearanceWindow.cs"),
     (Join-Path $sourceDirectory "AboutWindow.cs"),
@@ -265,6 +266,7 @@ $testArguments = @(
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
     (Join-Path $sourceDirectory "BallPositioning.cs"),
     (Join-Path $sourceDirectory "UiControls.cs"),
+    (Join-Path $sourceDirectory "FollowCodexStartupBehavior.cs"),
     (Join-Path $sourceDirectory "CodexProcessMonitor.cs"),
     (Join-Path $sourceDirectory "ParserTests.cs")
 )
@@ -289,6 +291,17 @@ Copy-Item -Force $readmeSource $readmeOutput
 
 $wix = Get-WixToolset
 $wixSource = Join-Path (Join-Path $projectRoot "installer") "TokenOrb.wxs"
+[xml]$wixDocument = Get-Content -Raw -LiteralPath $wixSource
+$wixNamespace = New-Object System.Xml.XmlNamespaceManager($wixDocument.NameTable)
+$wixNamespace.AddNamespace("w", "http://schemas.microsoft.com/wix/2006/wi")
+$autoStartValue = $wixDocument.SelectSingleNode(
+    "//w:Component[@Id='TokenOrbAutoStartComponent']/w:RegistryValue[@Name='Token Orb']",
+    $wixNamespace)
+if ((-not $autoStartValue) -or
+    ($autoStartValue.KeyPath -ne "yes") -or
+    ($autoStartValue.Value -notlike "*--watch*")) {
+    throw "MSI must track the Token Orb --watch login entry as its own component key path."
+}
 $wixObject = Join-Path $buildDirectory "TokenOrb.wixobj"
 $msiPath = Join-Path $OutputDirectory "TokenOrb.msi"
 if (Test-Path $wixObject) {

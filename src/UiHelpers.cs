@@ -321,6 +321,22 @@ namespace CodexQuotaBall
             }
         }
 
+        public static void InitializeFollowCodexDefault()
+        {
+            string legacyPreference = Path.Combine(
+                LegacyAppDataDirectory,
+                "follow-codex.txt");
+            if (!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(
+                File.Exists(FollowCodexFile),
+                File.Exists(legacyPreference)))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(AppDataDirectory);
+            File.WriteAllText(FollowCodexFile, "1");
+        }
+
         public static void EnsureFollowCodexRegistration()
         {
             if (IsFollowCodexEnabled())

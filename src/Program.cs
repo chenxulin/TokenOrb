@@ -26,14 +26,16 @@ namespace CodexQuotaBall
             bool companionUi = HasArgument(args, "--companion-ui");
             bool manualUi = HasArgument(args, "--manual-ui");
             bool watcherMode = HasArgument(args, "--watch");
+            if (!demoMode && !companionUi && !manualUi)
+            {
+                try { AppSettings.InitializeFollowCodexDefault(); }
+                catch (Exception exception) { AppSettings.LogError(exception); }
+            }
             if (!demoMode && !manualUi
                 && (watcherMode || (!companionUi && AppSettings.IsFollowCodexEnabled())))
             {
-                if (!watcherMode)
-                {
-                    try { AppSettings.EnsureFollowCodexRegistration(); }
-                    catch (Exception exception) { AppSettings.LogError(exception); }
-                }
+                try { AppSettings.EnsureFollowCodexRegistration(); }
+                catch (Exception exception) { AppSettings.LogError(exception); }
                 RunWatcher();
                 return;
             }
@@ -265,6 +267,7 @@ namespace CodexQuotaBall
             private readonly Forms.Timer timer;
             private readonly Drawing.Icon icon;
             private bool manuallyHiddenForCurrentCodexSession;
+            private bool codexRunning;
             private bool exiting;
             private DateTime launchPendingUntilUtc = DateTime.MinValue;
             private DateTime exitDeadlineUtc = DateTime.MinValue;
@@ -315,7 +318,7 @@ namespace CodexQuotaBall
                 notifyIcon.Icon = icon;
                 notifyIcon.Text = AppIdentity.ProductName + " - 后台运行中";
                 notifyIcon.ContextMenuStrip = menu;
-                notifyIcon.Visible = true;
+                notifyIcon.Visible = false;
                 notifyIcon.MouseDoubleClick += delegate(object sender, Forms.MouseEventArgs args)
                 {
                     if (args.Button == Forms.MouseButtons.Left)
@@ -328,7 +331,7 @@ namespace CodexQuotaBall
                 timer.Interval = 2000;
                 timer.Tick += OnTimerTick;
                 timer.Start();
-                RefreshMenuState();
+                UpdateCodexLifecycle();
             }
 
             private bool IsLaunchPending
@@ -354,9 +357,14 @@ namespace CodexQuotaBall
                     return;
                 }
 
+                UpdateCodexLifecycle();
+            }
+
+            private void UpdateCodexLifecycle()
+            {
                 try
                 {
-                    bool codexRunning = CodexProcessMonitor.IsCodexDesktopRunning();
+                    codexRunning = CodexProcessMonitor.IsCodexDesktopRunning();
                     manuallyHiddenForCurrentCodexSession =
                         WatcherTrayBehavior.ShouldKeepManualHideSuppressed(
                             codexRunning,
@@ -368,7 +376,19 @@ namespace CodexQuotaBall
                         launchPendingUntilUtc = DateTime.MinValue;
                     }
 
-                    if (!IsLaunchPending
+                    SetTrayIconVisible(WatcherTrayBehavior.ShouldShowTrayIcon(
+                        true,
+                        codexRunning));
+
+                    if (WatcherTrayBehavior.ShouldStopOrb(
+                        true,
+                        codexRunning,
+                        uiRunning,
+                        IsLaunchPending))
+                    {
+                        StopOrbForCodex();
+                    }
+                    else if (!IsLaunchPending
                         && WatcherTrayBehavior.ShouldAutoStartOrb(
                             true,
                             codexRunning,
@@ -384,6 +404,34 @@ namespace CodexQuotaBall
                 }
 
                 RefreshMenuState();
+            }
+
+            private void StopOrbForCodex()
+            {
+                launchPendingUntilUtc = DateTime.MinValue;
+                try
+                {
+                    uiVisible.Reset();
+                    uiExit.Set();
+                }
+                catch (Exception exception)
+                {
+                    AppSettings.LogError(exception);
+                }
+            }
+
+            private void SetTrayIconVisible(bool visible)
+            {
+                if (notifyIcon.Visible == visible)
+                {
+                    return;
+                }
+
+                if (!visible && menu.Visible)
+                {
+                    menu.Close();
+                }
+                notifyIcon.Visible = visible;
             }
 
             private void StartOrb()

@@ -17,6 +17,7 @@ namespace CodexQuotaBall
                 TestSparseMerge();
                 TestWindowNames();
                 TestCodexDesktopProcessMatching();
+                TestFollowCodexStartupDefaults();
                 TestWatcherTrayBehavior();
                 TestAppIdentity();
                 TestWaveColors();
@@ -168,6 +169,16 @@ namespace CodexQuotaBall
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 
+        private static void TestFollowCodexStartupDefaults()
+        {
+            Assert(FollowCodexStartupBehavior.ShouldCreateDefaultPreference(false, false),
+                "A fresh install should enable the login watcher by default");
+            Assert(!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(true, false),
+                "An existing Token Orb preference should be preserved");
+            Assert(!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(false, true),
+                "A legacy preference should be preserved during migration");
+        }
+
         private static void TestWatcherTrayBehavior()
         {
             Assert(WatcherTrayBehavior.ShouldAutoStartOrb(true, true, false, false),
@@ -184,6 +195,20 @@ namespace CodexQuotaBall
                 "Manual hide suppression should remain while Codex is running");
             Assert(!WatcherTrayBehavior.ShouldKeepManualHideSuppressed(false, true),
                 "Manual hide suppression should reset after Codex stops");
+            Assert(WatcherTrayBehavior.ShouldStopOrb(true, false, true, false),
+                "Watcher should stop a running orb when Codex closes");
+            Assert(WatcherTrayBehavior.ShouldStopOrb(true, false, false, true),
+                "Watcher should cancel a pending orb launch when Codex closes");
+            Assert(!WatcherTrayBehavior.ShouldStopOrb(true, true, true, false),
+                "Watcher should keep the orb running while Codex is open");
+            Assert(!WatcherTrayBehavior.ShouldStopOrb(false, false, true, false),
+                "Disabled follow mode should not stop a manually managed orb");
+            Assert(WatcherTrayBehavior.ShouldShowTrayIcon(true, true),
+                "Tray icon should be visible while Codex is open");
+            Assert(!WatcherTrayBehavior.ShouldShowTrayIcon(true, false),
+                "Tray icon should leave the notification area when Codex closes");
+            Assert(!WatcherTrayBehavior.ShouldShowTrayIcon(false, true),
+                "Disabled follow mode should not expose a watcher tray icon");
         }
 
         private static void TestWaveColors()
