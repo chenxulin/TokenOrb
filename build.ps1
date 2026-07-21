@@ -255,12 +255,14 @@ $testArguments = @(
     "/out:$testPath",
     "/reference:$($referenceByName['System.dll'])",
     "/reference:$($referenceByName['System.Core.dll'])",
+    "/reference:$($referenceByName['System.Xaml.dll'])",
     "/reference:$($referenceByName['WindowsBase.dll'])",
     "/reference:$($referenceByName['PresentationCore.dll'])",
     "/reference:$($referenceByName['PresentationFramework.dll'])",
     "/reference:$($referenceByName['System.Web.Extensions.dll'])",
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
+    (Join-Path $sourceDirectory "UiControls.cs"),
     (Join-Path $sourceDirectory "CodexProcessMonitor.cs"),
     (Join-Path $sourceDirectory "ParserTests.cs")
 )

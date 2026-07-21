@@ -200,4 +200,26 @@ namespace CodexQuotaBall
             timer.Stop();
         }
     }
+
+    internal static class WatcherTrayBehavior
+    {
+        public static bool ShouldAutoStartOrb(
+            bool followCodexEnabled,
+            bool codexRunning,
+            bool uiRunning,
+            bool manuallyHiddenForCurrentCodexSession)
+        {
+            return followCodexEnabled
+                && codexRunning
+                && !uiRunning
+                && !manuallyHiddenForCurrentCodexSession;
+        }
+
+        public static bool ShouldKeepManualHideSuppressed(
+            bool codexRunning,
+            bool manuallyHiddenForCurrentCodexSession)
+        {
+            return codexRunning && manuallyHiddenForCurrentCodexSession;
+        }
+    }
 }

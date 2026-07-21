@@ -42,4 +42,4 @@ jobs:
             "dist/TokenOrb.sha256" `
             --verify-tag `
             --generate-notes `
-            --title "Token Orb $env:GITHUB_REF_NAME"
+            --title "TokenOrb $env:GITHUB_REF_NAME"

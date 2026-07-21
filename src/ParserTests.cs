@@ -17,7 +17,9 @@ namespace CodexQuotaBall
                 TestSparseMerge();
                 TestWindowNames();
                 TestCodexDesktopProcessMatching();
+                TestWatcherTrayBehavior();
                 TestAppIdentity();
+                TestWaveColors();
                 Console.WriteLine("PASS: " + assertions.ToString(CultureInfo.InvariantCulture) + " assertions");
                 return 0;
             }
@@ -158,9 +160,37 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.0", "Display version should be v1.0");
-            Assert(AppIdentity.ProtocolVersion == "1.0.0", "Protocol version should be semantic v1.0");
+            Assert(AppIdentity.DisplayVersion == "v1.1", "Display version should be v1.1");
+            Assert(AppIdentity.ProtocolVersion == "1.1.0", "Protocol version should be semantic v1.1");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
+        }
+
+        private static void TestWatcherTrayBehavior()
+        {
+            Assert(WatcherTrayBehavior.ShouldAutoStartOrb(true, true, false, false),
+                "Watcher should auto-start the orb when Codex starts");
+            Assert(!WatcherTrayBehavior.ShouldAutoStartOrb(false, true, false, false),
+                "Disabled follow mode should not auto-start the orb");
+            Assert(!WatcherTrayBehavior.ShouldAutoStartOrb(true, false, false, false),
+                "Stopped Codex should not auto-start the orb");
+            Assert(!WatcherTrayBehavior.ShouldAutoStartOrb(true, true, true, false),
+                "An existing orb should not be started twice");
+            Assert(!WatcherTrayBehavior.ShouldAutoStartOrb(true, true, false, true),
+                "A manually hidden orb should stay hidden during the current Codex session");
+            Assert(WatcherTrayBehavior.ShouldKeepManualHideSuppressed(true, true),
+                "Manual hide suppression should remain while Codex is running");
+            Assert(!WatcherTrayBehavior.ShouldKeepManualHideSuppressed(false, true),
+                "Manual hide suppression should reset after Codex stops");
+        }
+
+        private static void TestWaveColors()
+        {
+            Assert(UiPalette.WaveColor(100.0) == UiPalette.Green, "100 percent should use a green wave");
+            Assert(UiPalette.WaveColor(20.001) == UiPalette.Green, "Values above 20 percent should use a green wave");
+            Assert(UiPalette.WaveColor(20.0) == UiPalette.Amber, "20 percent should use an orange wave");
+            Assert(UiPalette.WaveColor(10.001) == UiPalette.Amber, "Values above 10 percent should use an orange wave");
+            Assert(UiPalette.WaveColor(10.0) == UiPalette.Red, "10 percent should use a red wave");
+            Assert(UiPalette.WaveColor(0.0) == UiPalette.Red, "Values below 10 percent should use a red wave");
         }
 
         private static void Assert(bool condition, string message)

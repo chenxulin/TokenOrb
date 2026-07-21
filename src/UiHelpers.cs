@@ -107,6 +107,10 @@ namespace CodexQuotaBall
         private const string RunValueName = "Token Orb";
         private const string LegacyRunValueName = "CodexQuotaBall";
         private const string WatcherExitEventName = "Local\\CodexQuotaBall.WatcherExit";
+        private const string UiExitEventName = "Local\\CodexQuotaBall.UiExit";
+        private const string UiShowEventName = "Local\\CodexQuotaBall.UiShow";
+        private const string UiHideEventName = "Local\\CodexQuotaBall.UiHide";
+        private const string UiVisibleStateEventName = "Local\\CodexQuotaBall.UiVisible";
 
         private static string AppDataDirectory
         {
@@ -335,6 +339,26 @@ namespace CodexQuotaBall
         public static EventWaitHandle CreateWatcherExitEvent()
         {
             return new EventWaitHandle(false, EventResetMode.AutoReset, WatcherExitEventName);
+        }
+
+        public static EventWaitHandle CreateUiExitEvent()
+        {
+            return new EventWaitHandle(false, EventResetMode.AutoReset, UiExitEventName);
+        }
+
+        public static EventWaitHandle CreateUiShowEvent()
+        {
+            return new EventWaitHandle(false, EventResetMode.AutoReset, UiShowEventName);
+        }
+
+        public static EventWaitHandle CreateUiHideEvent()
+        {
+            return new EventWaitHandle(false, EventResetMode.AutoReset, UiHideEventName);
+        }
+
+        public static EventWaitHandle CreateUiVisibleStateEvent()
+        {
+            return new EventWaitHandle(false, EventResetMode.ManualReset, UiVisibleStateEventName);
         }
 
         public static void SignalWatcherExit()

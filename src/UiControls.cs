@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Threading;
 
 namespace CodexQuotaBall
 {
@@ -36,6 +37,19 @@ namespace CodexQuotaBall
                 return Blue;
             }
             if (remaining >= 10.0)
+            {
+                return Amber;
+            }
+            return Red;
+        }
+
+        public static Color WaveColor(double remaining)
+        {
+            if (remaining > 20.0)
+            {
+                return Green;
+            }
+            if (remaining > 10.0)
             {
                 return Amber;
             }
@@ -118,6 +132,8 @@ namespace CodexQuotaBall
         private bool connected;
         private string statusText = "正在连接";
         private Color accentColor = UiPalette.Blue;
+        private readonly DispatcherTimer waveTimer;
+        private double wavePhase;
 
         public QuotaBallVisual()
         {
@@ -127,6 +143,13 @@ namespace CodexQuotaBall
             UpdateShadow(DefaultDiameter);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
+
+            waveTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher);
+            waveTimer.Interval = TimeSpan.FromMilliseconds(40.0);
+            waveTimer.Tick += OnWaveTimerTick;
+            Loaded += OnLoaded;
+            Unloaded += OnUnloaded;
+            IsVisibleChanged += OnIsVisibleChanged;
         }
 
         public void SetAppearance(double diameter, Color color)
@@ -194,6 +217,17 @@ namespace CodexQuotaBall
             double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
             Color accent = limitingWindow == null ? UiPalette.Blue : UiPalette.QuotaColor(remaining);
 
+            if (limitingWindow != null)
+            {
+                DrawWaterWave(
+                    drawingContext,
+                    center,
+                    outerRadius,
+                    remaining,
+                    UiPalette.WaveColor(remaining),
+                    size);
+            }
+
             double ringWidth = Math.Max(1.8, Math.Min(8.0, size * 0.066));
             double ringRadius = Math.Max(4.0, outerRadius - ringWidth * 1.04);
             Pen trackPen = new Pen(UiPalette.Brush(Color.FromArgb(190, 255, 255, 255)), ringWidth);
@@ -249,6 +283,119 @@ namespace CodexQuotaBall
                 statusCenter,
                 statusInner,
                 statusInner);
+        }
+
+        private void OnWaveTimerTick(object sender, EventArgs e)
+        {
+            wavePhase += 0.15;
+            if (wavePhase >= Math.PI * 2.0)
+            {
+                wavePhase -= Math.PI * 2.0;
+            }
+            InvalidateVisual();
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            UpdateWaveTimer();
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            waveTimer.Stop();
+        }
+
+        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            UpdateWaveTimer();
+        }
+
+        private void UpdateWaveTimer()
+        {
+            if (IsLoaded && IsVisible)
+            {
+                waveTimer.Start();
+            }
+            else
+            {
+                waveTimer.Stop();
+            }
+        }
+
+        private void DrawWaterWave(
+            DrawingContext drawingContext,
+            Point center,
+            double outerRadius,
+            double remaining,
+            Color waveColor,
+            double size)
+        {
+            double radius = Math.Max(3.0, outerRadius - Math.Max(0.8, size * 0.018));
+            double ratio = Math.Max(0.035, Math.Min(0.965, remaining / 100.0));
+            double waterLine = center.Y + radius - radius * 2.0 * ratio;
+            double edgeDamping = Math.Max(0.38, Math.Min(1.0, Math.Min(ratio, 1.0 - ratio) * 4.2));
+            double amplitude = Math.Max(0.75, Math.Min(5.5, size * 0.052)) * edgeDamping;
+
+            drawingContext.PushClip(new EllipseGeometry(center, radius, radius));
+
+            Geometry backWave = CreateWaveFill(
+                center,
+                radius,
+                waterLine + amplitude * 0.42,
+                amplitude * 0.72,
+                -wavePhase * 0.74 + 1.35,
+                1.20);
+            drawingContext.DrawGeometry(
+                UiPalette.Brush(Color.FromArgb(72, waveColor.R, waveColor.G, waveColor.B)),
+                null,
+                backWave);
+
+            Geometry frontWave = CreateWaveFill(
+                center,
+                radius,
+                waterLine,
+                amplitude,
+                wavePhase,
+                1.42);
+            drawingContext.DrawGeometry(
+                UiPalette.Brush(Color.FromArgb(132, waveColor.R, waveColor.G, waveColor.B)),
+                null,
+                frontWave);
+
+            drawingContext.Pop();
+        }
+
+        private static Geometry CreateWaveFill(
+            Point center,
+            double radius,
+            double waterLine,
+            double amplitude,
+            double phase,
+            double cycles)
+        {
+            double left = center.X - radius;
+            double right = center.X + radius;
+            double bottom = center.Y + radius;
+            int segments = Math.Max(28, Math.Min(120, (int)Math.Ceiling(radius * 1.8)));
+
+            StreamGeometry geometry = new StreamGeometry();
+            using (StreamGeometryContext context = geometry.Open())
+            {
+                context.BeginFigure(new Point(left, bottom), true, true);
+                for (int index = 0; index <= segments; index++)
+                {
+                    double progress = (double)index / segments;
+                    double x = left + (right - left) * progress;
+                    double y = waterLine + amplitude * Math.Sin(progress * Math.PI * 2.0 * cycles + phase);
+                    context.LineTo(new Point(x, y), true, false);
+                }
+                context.LineTo(new Point(right, bottom), true, false);
+            }
+            if (geometry.CanFreeze)
+            {
+                geometry.Freeze();
+            }
+            return geometry;
         }
 
         private static Color Mix(Color source, Color target, double amount)

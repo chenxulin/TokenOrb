@@ -28,11 +28,21 @@ namespace CodexQuotaBall
         private bool loaded;
         private bool followCodexEnabled;
         private bool companionUi;
+        private readonly bool manualUi;
+        private bool orbVisible;
 
-        public MainWindow(bool demoMode, bool companionUi)
+        public event Action<bool> OrbVisibilityChanged;
+
+        public bool IsOrbVisible
+        {
+            get { return orbVisible; }
+        }
+
+        public MainWindow(bool demoMode, bool companionUi, bool manualUi)
         {
             this.demoMode = demoMode;
             this.companionUi = companionUi;
+            this.manualUi = manualUi;
             appearance = AppSettings.LoadAppearance();
             Title = AppIdentity.ProductName;
             Width = appearance.Size;
@@ -105,6 +115,12 @@ namespace CodexQuotaBall
                 }
             }
 
+            if (manualUi)
+            {
+                ActivateForCodex();
+                return;
+            }
+
             processMonitor.Start();
             if (!followCodexEnabled)
             {
@@ -114,6 +130,7 @@ namespace CodexQuotaBall
 
         private void OnClosed(object sender, EventArgs args)
         {
+            SetOrbVisible(false);
             secondTimer.Stop();
             try { detail.Close(); } catch { }
             processMonitor.StateChanged -= OnCodexRunningChanged;
@@ -361,7 +378,7 @@ namespace CodexQuotaBall
 
         private void OnCodexRunningChanged(bool running)
         {
-            if (!loaded || demoMode || !followCodexEnabled)
+            if (!loaded || demoMode || manualUi || !followCodexEnabled)
             {
                 return;
             }
@@ -390,6 +407,7 @@ namespace CodexQuotaBall
             Opacity = 1.0;
             ClampToWorkArea();
             secondTimer.Start();
+            SetOrbVisible(true);
             StartService();
         }
 
@@ -399,11 +417,45 @@ namespace CodexQuotaBall
             {
                 detail.Hide();
             }
-            secondTimer.Stop();
-            StopService();
             if (IsVisible)
             {
                 Hide();
+            }
+            SetOrbVisible(false);
+            secondTimer.Stop();
+            StopService();
+        }
+
+        public void ShowFromTray()
+        {
+            if (!loaded)
+            {
+                return;
+            }
+            ActivateForCodex();
+        }
+
+        public void HideFromTray()
+        {
+            if (!loaded)
+            {
+                return;
+            }
+            DeactivateForCodex();
+        }
+
+        private void SetOrbVisible(bool visible)
+        {
+            if (orbVisible == visible)
+            {
+                return;
+            }
+
+            orbVisible = visible;
+            Action<bool> changed = OrbVisibilityChanged;
+            if (changed != null)
+            {
+                changed(visible);
             }
         }
 
