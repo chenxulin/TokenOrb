@@ -141,8 +141,12 @@ $legacyOutputNames = @(
     "CodexQuotaBall-source.zip",
     "CodexQuotaBall-README.md",
     "CodexQuotaBall.sha256",
-    "TokenOrb.exe",
-    "TokenOrb.sha256",
+    "Token Orb.exe",
+    "Token Orb.msi",
+    "Token Orb.zip",
+    "Token Orb.source.zip",
+    "Token Orb.md",
+    "Token Orb.sha256",
     "Token Orb.wixpdb"
 )
 if (-not $QaMode) {
@@ -154,7 +158,7 @@ if (-not $QaMode) {
     }
 }
 
-$iconPath = Join-Path $buildDirectory "Token Orb.ico"
+$iconPath = Join-Path $buildDirectory "TokenOrb.ico"
 New-TokenOrbIcon $iconPath
 
 function Resolve-FrameworkAssembly([string]$Name) {
@@ -214,9 +218,9 @@ $applicationSources = @(
 )
 
 $applicationPath = if ($QaMode) {
-    Join-Path $buildDirectory "Token Orb-QA.exe"
+    Join-Path $buildDirectory "TokenOrb-QA.exe"
 } else {
-    Join-Path $OutputDirectory "Token Orb.exe"
+    Join-Path $OutputDirectory "TokenOrb.exe"
 }
 $compileArguments = @(
     "/nologo",
@@ -241,7 +245,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Application compilation failed with exit code $LASTEXITCODE"
 }
 
-$testPath = Join-Path $buildDirectory "Token Orb.Tests.exe"
+$testPath = Join-Path $buildDirectory "TokenOrb.Tests.exe"
 $testArguments = @(
     "/nologo",
     "/target:exe",
@@ -276,13 +280,13 @@ if ($QaMode) {
 }
 
 $readmeSource = Join-Path $projectRoot "README.md"
-$readmeOutput = Join-Path $OutputDirectory "Token Orb.md"
+$readmeOutput = Join-Path $OutputDirectory "TokenOrb.md"
 Copy-Item -Force $readmeSource $readmeOutput
 
 $wix = Get-WixToolset
-$wixSource = Join-Path (Join-Path $projectRoot "installer") "Token Orb.wxs"
-$wixObject = Join-Path $buildDirectory "Token Orb.wixobj"
-$msiPath = Join-Path $OutputDirectory "Token Orb.msi"
+$wixSource = Join-Path (Join-Path $projectRoot "installer") "TokenOrb.wxs"
+$wixObject = Join-Path $buildDirectory "TokenOrb.wixobj"
+$msiPath = Join-Path $OutputDirectory "TokenOrb.msi"
 if (Test-Path $wixObject) {
     Remove-Item -Force -LiteralPath $wixObject
 }
@@ -308,10 +312,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "MSI linking or validation failed with exit code $LASTEXITCODE"
 }
 
-$packagePath = Join-Path $OutputDirectory "Token Orb.zip"
+$packagePath = Join-Path $OutputDirectory "TokenOrb.zip"
 Compress-Archive -Force -Path $applicationPath, $readmeOutput -DestinationPath $packagePath
 
-$sourcePackagePath = Join-Path $OutputDirectory "Token Orb.source.zip"
+$sourcePackagePath = Join-Path $OutputDirectory "TokenOrb.source.zip"
 $sourceItems = @(
     (Join-Path $projectRoot "src"),
     (Join-Path $projectRoot "installer"),
@@ -329,7 +333,7 @@ $hashLines = $hashTargets | ForEach-Object {
     $hash = Get-FileHash -Algorithm SHA256 $_
     $hash.Hash.ToLowerInvariant() + "  " + [System.IO.Path]::GetFileName($_)
 }
-$hashPath = Join-Path $OutputDirectory "Token Orb.sha256"
+$hashPath = Join-Path $OutputDirectory "TokenOrb.sha256"
 Set-Content -Encoding ASCII -Path $hashPath -Value $hashLines
 
 Write-Host "Built: $applicationPath"

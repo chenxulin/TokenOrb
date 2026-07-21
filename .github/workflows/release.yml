@@ -23,8 +23,8 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Token Orb
-          path: dist/Token Orb.*
+          name: TokenOrb
+          path: dist/TokenOrb.*
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -34,12 +34,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create $env:GITHUB_REF_NAME `
-            "dist/Token Orb.exe" `
-            "dist/Token Orb.msi" `
-            "dist/Token Orb.zip" `
-            "dist/Token Orb.source.zip" `
-            "dist/Token Orb.md" `
-            "dist/Token Orb.sha256" `
+            "dist/TokenOrb.exe" `
+            "dist/TokenOrb.msi" `
+            "dist/TokenOrb.zip" `
+            "dist/TokenOrb.source.zip" `
+            "dist/TokenOrb.md" `
+            "dist/TokenOrb.sha256" `
             --verify-tag `
             --generate-notes `
             --title "Token Orb $env:GITHUB_REF_NAME"

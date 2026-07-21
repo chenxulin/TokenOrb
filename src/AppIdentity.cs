@@ -12,7 +12,7 @@ namespace CodexQuotaBall
     public static class AppIdentity
     {
         public const string ProductName = "Token Orb";
-        public const string ExecutableFileName = "Token Orb.exe";
+        public const string ExecutableFileName = "TokenOrb.exe";
         public const string DisplayVersion = "v1.0";
         public const string ProtocolVersion = "1.0.0";
         public const string Publisher = "chenxulin";

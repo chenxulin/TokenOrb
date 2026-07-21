@@ -4,18 +4,18 @@ Token Orb 是一个 Windows 悬浮球，可通过本机 Codex 实时接口显示
 
 ## 发布文件
 
-- `Token Orb.exe`：单文件便携版。
-- `Token Orb.msi`：Windows Installer 安装包，安装到 `%LOCALAPPDATA%\Programs\Token Orb`，并创建开始菜单入口。
-- `Token Orb.zip`：包含便携版和使用说明。
-- `Token Orb.source.zip`：可直接作为 GitHub 仓库内容使用的源码包。
-- `Token Orb.md`：发布版使用说明。
-- `Token Orb.sha256`：上述发布文件的 SHA-256 校验值。
+- `TokenOrb.exe`：单文件便携版。
+- `TokenOrb.msi`：Windows Installer 安装包，安装到 `%LOCALAPPDATA%\Programs\Token Orb`，并创建开始菜单入口。
+- `TokenOrb.zip`：包含便携版和使用说明。
+- `TokenOrb.source.zip`：可直接作为 GitHub 仓库内容使用的源码包。
+- `TokenOrb.md`：发布版使用说明。
+- `TokenOrb.sha256`：上述发布文件的 SHA-256 校验值。
 
 ## 安装与使用
 
 ### MSI 安装（推荐）
 
-1. 双击 `Token Orb.msi` 完成当前用户安装。
+1. 双击 `TokenOrb.msi` 完成当前用户安装。
 2. 从开始菜单启动 Token Orb，或重新登录 Windows。
 3. Token Orb 会在 Codex 桌面应用启动时出现，并在 Codex 关闭后退出悬浮球界面。
 
@@ -24,7 +24,7 @@ Token Orb 是一个 Windows 悬浮球，可通过本机 Codex 实时接口显示
 ### 便携版
 
 1. 确保 Codex 已安装并已使用 ChatGPT 账号登录。
-2. 双击 `Token Orb.exe`。
+2. 双击 `TokenOrb.exe`。
 3. 左键单击悬浮球查看完整额度；点击卡片之外的任意位置会自动收起卡片；拖动悬浮球可换位置。
 4. 右键选择“外观”可按 1 px 调整直径（24–160 px），使用 6 种预设颜色或打开系统颜色选择器自定义颜色。
 
@@ -76,6 +76,6 @@ WiX 来源：<https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm>
 - 显示“本地”：实时接口连接失败时的降级状态；右键选择“立即刷新”可重试。
 - 双击后没有出现悬浮球：默认跟随模式正在等待 Codex 桌面窗口；启动 Codex 后会自动出现。
 - 找不到 Codex：可把环境变量 `CODEX_QUOTA_CODEX_PATH` 指向 `codex.exe` 的完整路径后重新启动。
-- Windows 安全提示：当前构建未做商业代码签名，可使用 `Token Orb.sha256` 核对文件完整性。
+- Windows 安全提示：当前构建未做商业代码签名，可使用 `TokenOrb.sha256` 核对文件完整性。
 
 官方 Codex app-server 说明：<https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#auth-endpoints>

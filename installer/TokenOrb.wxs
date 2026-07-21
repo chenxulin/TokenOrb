@@ -33,7 +33,7 @@
             <Component Id="TokenOrbExecutableComponent" Guid="{4BA374EF-E1D9-48DD-849D-F89C8AE2657E}">
               <File
                   Id="TokenOrbExecutable"
-                  Name="Token Orb.exe"
+                  Name="TokenOrb.exe"
                   Source="$(var.TokenOrbExe)"
                   Checksum="yes" />
               <RegistryValue
@@ -71,7 +71,7 @@
                 Id="TokenOrbStartMenuShortcut"
                 Name="Token Orb"
                 Description="Codex quota at a glance"
-                Target="[INSTALLFOLDER]Token Orb.exe"
+                Target="[INSTALLFOLDER]TokenOrb.exe"
                 WorkingDirectory="INSTALLFOLDER"
                 Icon="TokenOrbIcon" />
             <RemoveFolder Id="RemoveTokenOrbProgramMenuFolder" On="uninstall" />
