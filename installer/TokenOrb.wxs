@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product
-      Id="{F6378A95-7EFE-4EE9-BD7B-0AA7B92422FA}"
+      Id="{76236174-D7FC-42EF-983D-9CEBB65C5E92}"
       Name="Token Orb"
       Language="2052"
       Codepage="936"
-      Version="1.1.0"
+      Version="1.2.0"
       Manufacturer="chenxulin"
       UpgradeCode="{E2EE802B-B7DD-4436-ADF1-A3DF49DCD07A}">
     <Package
@@ -13,7 +13,7 @@
         Compressed="yes"
         InstallScope="perUser"
         InstallPrivileges="limited"
-        Description="Token Orb v1.1 installer" />
+        Description="Token Orb v1.2 installer" />
 
     <MajorUpgrade
         Schedule="afterInstallInitialize"

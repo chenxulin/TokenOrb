@@ -32,15 +32,7 @@ namespace CodexQuotaBall
 
         public static Color QuotaColor(double remaining)
         {
-            if (remaining >= 20.0)
-            {
-                return Blue;
-            }
-            if (remaining >= 10.0)
-            {
-                return Amber;
-            }
-            return Red;
+            return WaveColor(remaining);
         }
 
         public static Color WaveColor(double remaining)
@@ -125,7 +117,7 @@ namespace CodexQuotaBall
 
     public sealed class QuotaBallVisual : FrameworkElement
     {
-        public const double DefaultDiameter = 38.0;
+        public const double DefaultDiameter = 60.0;
         public const double MinimumDiameter = 24.0;
         public const double MaximumDiameter = 160.0;
         private QuotaSnapshot snapshot;
@@ -182,6 +174,8 @@ namespace CodexQuotaBall
             {
                 statusText = status;
             }
+            double diameter = Double.IsNaN(Width) || Width <= 0.0 ? DefaultDiameter : Width;
+            UpdateShadow(diameter);
             InvalidateVisual();
         }
 
@@ -197,6 +191,9 @@ namespace CodexQuotaBall
 
             Point center = new Point(ActualWidth / 2.0, ActualHeight / 2.0);
             double outerRadius = Math.Max(6.0, size / 2.0 - Math.Max(2.2, size * 0.092));
+            QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.MostRestrictiveWindow;
+            double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
+            bool depleted = limitingWindow != null && remaining <= 0.0;
             RadialGradientBrush background = new RadialGradientBrush();
             background.Center = new Point(0.38, 0.32);
             background.GradientOrigin = new Point(0.30, 0.24);
@@ -206,30 +203,37 @@ namespace CodexQuotaBall
             background.GradientStops.Add(new GradientStop(Mix(accentColor, Colors.White, 0.78), 0.58));
             background.GradientStops.Add(new GradientStop(Mix(accentColor, Colors.White, 0.45), 1.0));
 
+            Color outerBorderColor = ResolveOuterBorderColor(
+                accentColor,
+                limitingWindow == null ? (double?)null : remaining);
+            double outerBorderWidth = depleted
+                ? Math.Max(2.0, Math.Min(6.0, size * 0.045))
+                : Math.Max(0.7, size * 0.021);
+
             drawingContext.DrawEllipse(
                 background,
-                new Pen(UiPalette.Brush(Mix(accentColor, Colors.Black, 0.08)), Math.Max(0.7, size * 0.021)),
+                new Pen(UiPalette.Brush(outerBorderColor), outerBorderWidth),
                 center,
                 outerRadius,
                 outerRadius);
 
-            QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.MostRestrictiveWindow;
-            double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
             Color accent = limitingWindow == null ? UiPalette.Blue : UiPalette.QuotaColor(remaining);
+            double ringWidth = Math.Max(1.8, Math.Min(8.0, size * 0.066));
+            double ringRadius = Math.Max(4.0, outerRadius - ringWidth * 1.04);
 
-            if (limitingWindow != null)
+            if (limitingWindow != null && remaining > 0.0)
             {
+                double waveInset = Math.Max(0.65, size * 0.012);
+                double waveRadius = Math.Max(2.2, ringRadius - ringWidth / 2.0 - waveInset);
                 DrawWaterWave(
                     drawingContext,
                     center,
-                    outerRadius,
+                    waveRadius,
                     remaining,
                     UiPalette.WaveColor(remaining),
                     size);
             }
 
-            double ringWidth = Math.Max(1.8, Math.Min(8.0, size * 0.066));
-            double ringRadius = Math.Max(4.0, outerRadius - ringWidth * 1.04);
             Pen trackPen = new Pen(UiPalette.Brush(Color.FromArgb(190, 255, 255, 255)), ringWidth);
             trackPen.StartLineCap = PenLineCap.Round;
             trackPen.EndLineCap = PenLineCap.Round;
@@ -263,7 +267,9 @@ namespace CodexQuotaBall
                 numberText,
                 fontSize,
                 FontWeights.Bold,
-                UiPalette.Brush(Mix(accentColor, Colors.Black, 0.58)),
+                UiPalette.Brush(ResolveQuotaTextColor(
+                    accentColor,
+                    limitingWindow == null ? (double?)null : remaining)),
                 center,
                 pixelsPerDip);
 
@@ -283,6 +289,24 @@ namespace CodexQuotaBall
                 statusCenter,
                 statusInner,
                 statusInner);
+        }
+
+        internal static Color ResolveOuterBorderColor(Color appearanceAccent, double? remaining)
+        {
+            if (remaining.HasValue && remaining.Value <= 0.0)
+            {
+                return UiPalette.Red;
+            }
+            return Mix(appearanceAccent, Colors.Black, 0.08);
+        }
+
+        internal static Color ResolveQuotaTextColor(Color appearanceAccent, double? remaining)
+        {
+            if (remaining.HasValue && remaining.Value <= 0.0)
+            {
+                return UiPalette.Red;
+            }
+            return Mix(appearanceAccent, Colors.Black, 0.58);
         }
 
         private void OnWaveTimerTick(object sender, EventArgs e)
@@ -325,13 +349,13 @@ namespace CodexQuotaBall
         private void DrawWaterWave(
             DrawingContext drawingContext,
             Point center,
-            double outerRadius,
+            double radius,
             double remaining,
             Color waveColor,
             double size)
         {
-            double radius = Math.Max(3.0, outerRadius - Math.Max(0.8, size * 0.018));
-            double ratio = Math.Max(0.035, Math.Min(0.965, remaining / 100.0));
+            double visibleHeight = CalculateVisibleWaveHeight(size, radius, remaining);
+            double ratio = visibleHeight / Math.Max(1.0, radius * 2.0);
             double waterLine = center.Y + radius - radius * 2.0 * ratio;
             double edgeDamping = Math.Max(0.38, Math.Min(1.0, Math.Min(ratio, 1.0 - ratio) * 4.2));
             double amplitude = Math.Max(0.75, Math.Min(5.5, size * 0.052)) * edgeDamping;
@@ -363,6 +387,23 @@ namespace CodexQuotaBall
                 frontWave);
 
             drawingContext.Pop();
+        }
+
+        internal static double CalculateVisibleWaveHeight(
+            double size,
+            double radius,
+            double remaining)
+        {
+            double safeRemaining = Math.Max(0.0, Math.Min(100.0, remaining));
+            if (safeRemaining <= 0.0)
+            {
+                return 0.0;
+            }
+            double diameter = Math.Max(1.0, radius * 2.0);
+            double actualHeight = diameter * safeRemaining / 100.0;
+            double minimumVisibleHeight = Math.Max(2.6, Math.Min(5.0, size * 0.10));
+            double maximumVisibleHeight = diameter * 0.965;
+            return Math.Min(maximumVisibleHeight, Math.Max(actualHeight, minimumVisibleHeight));
         }
 
         private static Geometry CreateWaveFill(

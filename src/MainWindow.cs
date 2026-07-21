@@ -186,7 +186,7 @@ namespace CodexQuotaBall
             }
             else
             {
-                SnapToEdgeAndSave();
+                ClampAndSavePosition();
                 if (detail.IsVisible)
                 {
                     detail.PositionBeside(this);
@@ -234,6 +234,32 @@ namespace CodexQuotaBall
             MenuItem appearanceItem = new MenuItem { Header = "外观" };
             appearanceItem.Click += delegate { OpenAppearanceWindow(); };
             menu.Items.Add(appearanceItem);
+
+            MenuItem visibilityItem = new MenuItem
+            {
+                Header = "显示/隐藏悬浮球",
+                IsCheckable = true,
+                IsChecked = IsOrbVisible
+            };
+            visibilityItem.Click += delegate
+            {
+                bool shouldShow = !IsOrbVisible;
+                Dispatcher.BeginInvoke(
+                    new Action(delegate
+                    {
+                        if (shouldShow)
+                        {
+                            ShowFromTray();
+                        }
+                        else
+                        {
+                            HideFromTray();
+                        }
+                    }),
+                    DispatcherPriority.Background);
+            };
+            menu.Opened += delegate { visibilityItem.IsChecked = IsOrbVisible; };
+            menu.Items.Add(visibilityItem);
             menu.Items.Add(new Separator());
 
             MenuItem followCodexItem = new MenuItem
@@ -348,7 +374,10 @@ namespace CodexQuotaBall
                 QuotaBallVisual.MinimumDiameter,
                 Math.Min(size, QuotaBallVisual.MaximumDiameter)));
             Rect workArea = GetWorkArea();
-            bool onRight = Left + ActualWidth / 2.0 >= workArea.Left + workArea.Width / 2.0;
+            Point currentPosition = new Point(Left, Top);
+            Size currentSize = new Size(
+                ActualWidth > 0.0 ? ActualWidth : Width,
+                ActualHeight > 0.0 ? ActualHeight : Height);
 
             MinWidth = 0.0;
             MinHeight = 0.0;
@@ -363,8 +392,13 @@ namespace CodexQuotaBall
             ball.SetAppearance(safeSize, color);
             appearance = new BallAppearanceSettings { Size = safeSize, AccentColor = color };
 
-            Left = onRight ? workArea.Right - safeSize - 10.0 : workArea.Left + 10.0;
-            ClampToWorkArea();
+            Point resizedPosition = BallPositioning.PreserveCenterOnResize(
+                currentPosition,
+                currentSize,
+                new Size(safeSize, safeSize),
+                workArea);
+            Left = resizedPosition.X;
+            Top = resizedPosition.Y;
             AppSettings.SavePosition(Left, Top);
             if (save)
             {
@@ -697,22 +731,21 @@ namespace CodexQuotaBall
             Top = workArea.Top + workArea.Height * 0.38;
         }
 
-        private void SnapToEdgeAndSave()
+        private void ClampAndSavePosition()
         {
-            Rect workArea = GetWorkArea();
-            double center = Left + ActualWidth / 2.0;
-            Left = center < workArea.Left + workArea.Width / 2.0
-                ? workArea.Left + 10.0
-                : workArea.Right - ActualWidth - 10.0;
-            Top = Math.Max(workArea.Top + 8.0, Math.Min(Top, workArea.Bottom - ActualHeight - 8.0));
+            ClampToWorkArea();
             AppSettings.SavePosition(Left, Top);
         }
 
         private void ClampToWorkArea()
         {
             Rect workArea = GetWorkArea();
-            Left = Math.Max(workArea.Left, Math.Min(Left, workArea.Right - Width));
-            Top = Math.Max(workArea.Top, Math.Min(Top, workArea.Bottom - Height));
+            Point position = BallPositioning.ClampToWorkArea(
+                new Point(Left, Top),
+                new Size(Width, Height),
+                workArea);
+            Left = position.X;
+            Top = position.Y;
         }
 
         private Rect GetWorkArea()

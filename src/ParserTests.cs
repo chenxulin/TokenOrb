@@ -20,6 +20,9 @@ namespace CodexQuotaBall
                 TestWatcherTrayBehavior();
                 TestAppIdentity();
                 TestWaveColors();
+                TestWaveVisibility();
+                TestDepletedBallBorder();
+                TestBallPositioning();
                 Console.WriteLine("PASS: " + assertions.ToString(CultureInfo.InvariantCulture) + " assertions");
                 return 0;
             }
@@ -160,8 +163,8 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.1", "Display version should be v1.1");
-            Assert(AppIdentity.ProtocolVersion == "1.1.0", "Protocol version should be semantic v1.1");
+            Assert(AppIdentity.DisplayVersion == "v1.2", "Display version should be v1.2");
+            Assert(AppIdentity.ProtocolVersion == "1.2.0", "Protocol version should be semantic v1.2");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 
@@ -191,6 +194,84 @@ namespace CodexQuotaBall
             Assert(UiPalette.WaveColor(10.001) == UiPalette.Amber, "Values above 10 percent should use an orange wave");
             Assert(UiPalette.WaveColor(10.0) == UiPalette.Red, "10 percent should use a red wave");
             Assert(UiPalette.WaveColor(0.0) == UiPalette.Red, "Values below 10 percent should use a red wave");
+            Assert(UiPalette.QuotaColor(20.001) == UiPalette.WaveColor(20.001),
+                "Green progress ring should match the wave above 20 percent");
+            Assert(UiPalette.QuotaColor(20.0) == UiPalette.WaveColor(20.0),
+                "Orange progress ring should match the wave at 20 percent");
+            Assert(UiPalette.QuotaColor(10.001) == UiPalette.WaveColor(10.001),
+                "Orange progress ring should match the wave above 10 percent");
+            Assert(UiPalette.QuotaColor(10.0) == UiPalette.WaveColor(10.0),
+                "Red progress ring should match the wave at 10 percent");
+        }
+
+        private static void TestWaveVisibility()
+        {
+            const double size = QuotaBallVisual.DefaultDiameter;
+            const double radius = 17.66;
+            double minimumHeight = 5.0;
+
+            AssertNear(60.0, QuotaBallVisual.DefaultDiameter,
+                "The default orb diameter should be 60 pixels");
+            AssertNear(0.0, QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 0.0),
+                "Zero-percent quota should not render a wave");
+            AssertNear(minimumHeight, QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 0.01),
+                "Positive red quota should retain its minimum visible height");
+            AssertNear(minimumHeight, QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 10.0),
+                "Ten-percent red wave should remain visible");
+            Assert(QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 15.0) >= minimumHeight,
+                "Fifteen-percent orange wave should remain visible");
+            Assert(QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 25.0) > minimumHeight,
+                "Green wave should use the real quota height above the visibility floor");
+            AssertNear(10.0, QuotaBallVisual.CalculateVisibleWaveHeight(160.0, 50.0, 10.0),
+                "Large orbs should not inflate an already-visible ten-percent wave");
+        }
+
+        private static void TestDepletedBallBorder()
+        {
+            Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Blue, 0.0) == UiPalette.Red,
+                "Zero-percent outer border should use the low-quota red");
+            Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Blue, 0.01) != UiPalette.Red,
+                "Positive quota should preserve the normal outer border");
+            Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Amber, null) != UiPalette.Red,
+                "Unknown quota should preserve the normal outer border");
+            Assert(QuotaBallVisual.ResolveQuotaTextColor(UiPalette.Blue, 0.0) == UiPalette.Red,
+                "Zero-percent text should use the same low-quota red");
+            Assert(QuotaBallVisual.ResolveQuotaTextColor(UiPalette.Blue, 0.01) != UiPalette.Red,
+                "Positive quota text should preserve the normal color");
+        }
+
+        private static void TestBallPositioning()
+        {
+            System.Windows.Rect workArea = new System.Windows.Rect(0.0, 0.0, 1920.0, 1040.0);
+            System.Windows.Size ballSize = new System.Windows.Size(60.0, 60.0);
+
+            System.Windows.Point centerPosition = BallPositioning.ClampToWorkArea(
+                new System.Windows.Point(800.0, 420.0),
+                ballSize,
+                workArea);
+            AssertNear(800.0, centerPosition.X,
+                "A valid horizontal position should not snap to a screen edge");
+            AssertNear(420.0, centerPosition.Y,
+                "A valid vertical position should not snap to a screen edge");
+
+            System.Windows.Point outsidePosition = BallPositioning.ClampToWorkArea(
+                new System.Windows.Point(1900.0, -25.0),
+                ballSize,
+                workArea);
+            AssertNear(1860.0, outsidePosition.X,
+                "A position beyond the right edge should be clamped inside the work area");
+            AssertNear(0.0, outsidePosition.Y,
+                "A position above the work area should be clamped inside the work area");
+
+            System.Windows.Point resizedPosition = BallPositioning.PreserveCenterOnResize(
+                new System.Windows.Point(800.0, 420.0),
+                new System.Windows.Size(60.0, 60.0),
+                new System.Windows.Size(100.0, 100.0),
+                workArea);
+            AssertNear(780.0, resizedPosition.X,
+                "Resizing should preserve the orb horizontal center");
+            AssertNear(400.0, resizedPosition.Y,
+                "Resizing should preserve the orb vertical center");
         }
 
         private static void Assert(bool condition, string message)
