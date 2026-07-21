@@ -48,9 +48,30 @@ namespace CodexQuotaBall
             Grid.SetRow(bar, 2);
             grid.Children.Add(bar);
 
-            resetText = CreateText(10.5, FontWeights.Normal, UiPalette.Muted);
-            Grid.SetRow(resetText, 4);
-            grid.Children.Add(resetText);
+            Grid resetContent = new Grid();
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(9) });
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            TextBlock resetLabel = CreateText(10.0, FontWeights.Normal, Color.FromRgb(92, 102, 110));
+            resetLabel.Text = "下轮重置";
+            resetText = CreateText(10.5, FontWeights.SemiBold, Color.FromRgb(56, 103, 130));
+            resetText.TextTrimming = TextTrimming.CharacterEllipsis;
+            Grid.SetColumn(resetText, 2);
+            resetContent.Children.Add(resetLabel);
+            resetContent.Children.Add(resetText);
+
+            Border resetPanel = new Border
+            {
+                Background = UiPalette.Brush(Color.FromRgb(218, 241, 253)),
+                BorderBrush = UiPalette.Brush(Color.FromArgb(145, UiPalette.Border.R, UiPalette.Border.G, UiPalette.Border.B)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(8, 5, 8, 5),
+                Child = resetContent
+            };
+            Grid.SetRow(resetPanel, 4);
+            grid.Children.Add(resetPanel);
 
             Child = grid;
         }
@@ -71,7 +92,7 @@ namespace CodexQuotaBall
             remainingText.Foreground = UiPalette.Brush(accent);
             bar.RemainingPercent = remaining;
             bar.AccentColor = accent;
-            resetText.Text = "重置：" + QuotaFormatting.FormatReset(window);
+            resetText.Text = QuotaFormatting.FormatReset(window);
         }
 
         private static TextBlock CreateText(double size, FontWeight weight, Color color)
@@ -96,8 +117,6 @@ namespace CodexQuotaBall
         private readonly TextBlock creditsValue;
         private readonly TextBlock planValue;
         private readonly TextBlock sourceValue;
-        private readonly Border warningBox;
-        private readonly TextBlock warningText;
         private QuotaSnapshot snapshot;
         private string connectionText = "正在连接";
         private bool connected;
@@ -205,26 +224,6 @@ namespace CodexQuotaBall
             content.Children.Add(primaryRow);
             content.Children.Add(secondaryRow);
 
-            warningText = new TextBlock
-            {
-                Foreground = UiPalette.Brush(UiPalette.Red),
-                FontSize = 10.5,
-                FontWeight = FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap
-            };
-            warningBox = new Border
-            {
-                Background = UiPalette.Brush(Color.FromArgb(46, 255, 97, 125)),
-                BorderBrush = UiPalette.Brush(Color.FromArgb(100, 255, 97, 125)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(10, 8, 10, 8),
-                Margin = new Thickness(0, 0, 0, 10),
-                Visibility = Visibility.Collapsed,
-                Child = warningText
-            };
-            content.Children.Add(warningBox);
-
             Border accountBox = new Border
             {
                 Background = UiPalette.Brush(Color.FromRgb(238, 249, 255)),
@@ -304,7 +303,6 @@ namespace CodexQuotaBall
                 creditsValue.Text = "—";
                 planValue.Text = "—";
                 sourceValue.Text = "等待 Codex 额度数据…";
-                warningBox.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -314,21 +312,6 @@ namespace CodexQuotaBall
             planValue.Text = QuotaFormatting.FormatPlan(snapshot.PlanType);
             sourceValue.Text = "数据：" + (snapshot.Source ?? "Codex")
                 + " · " + QuotaFormatting.FormatCapturedAt(snapshot);
-
-            if (snapshot.SpendControlReached == true)
-            {
-                warningText.Text = "工作区消费上限已触达";
-                warningBox.Visibility = Visibility.Visible;
-            }
-            else if (!String.IsNullOrWhiteSpace(snapshot.RateLimitReachedType))
-            {
-                warningText.Text = "额度限制已触发：" + snapshot.RateLimitReachedType;
-                warningBox.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                warningBox.Visibility = Visibility.Collapsed;
-            }
         }
 
         public void UpdateConnection(string text, bool isConnected)

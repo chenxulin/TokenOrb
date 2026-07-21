@@ -27,6 +27,21 @@ jobs:
           path: dist/TokenOrb.*
           if-no-files-found: error
 
+      - name: Remove existing GitHub Release for this tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $env:GITHUB_REF_NAME --yes
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+          exit 0
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
