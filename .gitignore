@@ -1,0 +1,28 @@
+# Local build outputs
+/build/
+/dist/
+/outputs/
+/bin/
+/obj/
+/TestResults/
+*.pdb
+*.wixobj
+*.wixpdb
+*.partial
+
+# Downloaded build tools
+/.tools/
+
+# Editor and agent-local state
+/.vs/
+/.vscode/
+/.codex/
+/.agents/
+*.suo
+*.user
+
+# Logs and Windows metadata
+*.log
+*.tmp
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,45 @@
+name: Build Token Orb
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build EXE, MSI, and release archives
+        shell: powershell
+        run: .\build.ps1 -OutputDirectory .\dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Token Orb
+          path: dist/Token Orb.*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            "dist/Token Orb.exe" `
+            "dist/Token Orb.msi" `
+            "dist/Token Orb.zip" `
+            "dist/Token Orb.source.zip" `
+            "dist/Token Orb.md" `
+            "dist/Token Orb.sha256" `
+            --verify-tag `
+            --generate-notes `
+            --title "Token Orb $env:GITHUB_REF_NAME"
