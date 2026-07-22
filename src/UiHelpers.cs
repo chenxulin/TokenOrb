@@ -106,11 +106,21 @@ namespace CodexQuotaBall
     {
         private const string RunValueName = "Token Orb";
         private const string LegacyRunValueName = "CodexQuotaBall";
+#if QA
+        private const string WatcherExitEventName = "Local\\CodexQuotaBall.QA.WatcherExit";
+        private const string UiExitEventName = "Local\\CodexQuotaBall.QA.UiExit";
+        private const string UiShowEventName = "Local\\CodexQuotaBall.QA.UiShow";
+        private const string UiHideEventName = "Local\\CodexQuotaBall.QA.UiHide";
+        private const string UiVisibleStateEventName = "Local\\CodexQuotaBall.QA.UiVisible";
+#else
         private const string WatcherExitEventName = "Local\\CodexQuotaBall.WatcherExit";
         private const string UiExitEventName = "Local\\CodexQuotaBall.UiExit";
         private const string UiShowEventName = "Local\\CodexQuotaBall.UiShow";
         private const string UiHideEventName = "Local\\CodexQuotaBall.UiHide";
         private const string UiVisibleStateEventName = "Local\\CodexQuotaBall.UiVisible";
+#endif
+        private const long MaximumRealtimeErrorLogBytes = 1024 * 1024;
+        private static readonly object RealtimeErrorLogLock = new object();
 
         private static string AppDataDirectory
         {
@@ -446,6 +456,56 @@ namespace CodexQuotaBall
                         + Environment.NewLine);
             }
             catch { }
+        }
+
+        public static void LogRealtimeError(string operation, string details)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppDataDirectory);
+                string path = Path.Combine(AppDataDirectory, "realtime-errors.log");
+                string previousPath = Path.Combine(AppDataDirectory, "realtime-errors.previous.log");
+                string safeOperation = SanitizeRealtimeLogValue(operation, 120);
+                string safeDetails = SanitizeRealtimeLogValue(details, 2000);
+                string line = DateTimeOffset.Now.ToString("u", CultureInfo.InvariantCulture)
+                    + " [" + safeOperation + "] " + safeDetails + Environment.NewLine;
+
+                lock (RealtimeErrorLogLock)
+                {
+                    FileInfo current = new FileInfo(path);
+                    if (current.Exists && current.Length >= MaximumRealtimeErrorLogBytes)
+                    {
+                        if (File.Exists(previousPath))
+                        {
+                            File.Delete(previousPath);
+                        }
+                        File.Move(path, previousPath);
+                    }
+                    File.AppendAllText(path, line);
+                }
+            }
+            catch { }
+        }
+
+        private static string SanitizeRealtimeLogValue(string value, int maximumLength)
+        {
+            string text = String.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            text = text.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
+
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!String.IsNullOrWhiteSpace(userProfile))
+            {
+                int index = text.IndexOf(userProfile, StringComparison.OrdinalIgnoreCase);
+                while (index >= 0)
+                {
+                    text = text.Substring(0, index)
+                        + "%USERPROFILE%"
+                        + text.Substring(index + userProfile.Length);
+                    index = text.IndexOf(userProfile, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            return text.Length <= maximumLength ? text : text.Substring(0, maximumLength) + "…";
         }
 
     }

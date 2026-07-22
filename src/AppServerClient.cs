@@ -12,9 +12,14 @@ namespace CodexQuotaBall
     {
         private readonly object stateLock = new object();
         private readonly object inputLock = new object();
+        private readonly HashSet<long> rateLimitRequestIds = new HashSet<long>();
+        private readonly RealtimeRetryPolicy retryPolicy = new RealtimeRetryPolicy();
         private Process process;
+        private Timer retryTimer;
         private bool initialized;
+        private bool hasSuccessfulLiveQuery;
         private bool disposed;
+        private int retryGeneration;
         private int nextRequestId = 10;
 
         public event Action<QuotaSnapshot, bool> SnapshotReceived;
@@ -52,6 +57,7 @@ namespace CodexQuotaBall
                 }
 
                 initialized = false;
+                ResetQueryStateLocked();
                 Process newProcess = new Process();
                 try
                 {
@@ -69,8 +75,11 @@ namespace CodexQuotaBall
                     newProcess.BeginOutputReadLine();
                     newProcess.BeginErrorReadLine();
                 }
-                catch
+                catch (Exception exception)
                 {
+                    AppSettings.LogRealtimeError(
+                        "启动 Codex app-server",
+                        exception.GetType().Name + ": " + exception.Message);
                     try { newProcess.Dispose(); } catch { }
                     process = null;
                     RaiseStatus("实时接口不可用，使用本地快照", false);
@@ -79,26 +88,80 @@ namespace CodexQuotaBall
             }
 
             RaiseStatus("正在连接 Codex 实时接口…", false);
-            SendLine("{\"method\":\"initialize\",\"id\":0,\"params\":{\"clientInfo\":{\"name\":\"token_orb\",\"title\":\""
-                + AppIdentity.ProductName + "\",\"version\":\"" + AppIdentity.ProtocolVersion + "\"}}}");
+            Exception sendError;
+            if (!SendLine(
+                "{\"method\":\"initialize\",\"id\":0,\"params\":{\"clientInfo\":{\"name\":\"token_orb\",\"title\":\""
+                    + AppIdentity.ProductName + "\",\"version\":\"" + AppIdentity.ProtocolVersion + "\"}}}",
+                out sendError))
+            {
+                AppSettings.LogRealtimeError(
+                    "发送 initialize",
+                    sendError.GetType().Name + ": " + sendError.Message);
+                RaiseStatus("实时接口通信失败，使用本地快照", false);
+            }
         }
 
         public void RequestRefresh()
         {
-            if (!IsInitialized)
-            {
-                return;
-            }
-
-            int id = Interlocked.Increment(ref nextRequestId);
-            SendLine("{\"method\":\"account/rateLimits/read\",\"id\":"
-                + id.ToString(CultureInfo.InvariantCulture) + "}");
+            RequestRefreshCore(true);
         }
 
         public void Restart()
         {
             StopProcess();
             Start();
+        }
+
+        private void RequestRefreshCore(bool cancelScheduledRetry)
+        {
+            int id;
+            lock (stateLock)
+            {
+                if (disposed || !initialized || process == null || SafeHasExited(process))
+                {
+                    return;
+                }
+                if (cancelScheduledRetry)
+                {
+                    CancelRetryTimerLocked();
+                }
+                id = Interlocked.Increment(ref nextRequestId);
+                rateLimitRequestIds.Add(id);
+            }
+
+            Exception sendError;
+            if (!SendLine(
+                "{\"method\":\"account/rateLimits/read\",\"id\":"
+                    + id.ToString(CultureInfo.InvariantCulture) + "}",
+                out sendError))
+            {
+                lock (stateLock)
+                {
+                    rateLimitRequestIds.Remove(id);
+                }
+                HandleQueryFailure(
+                    id,
+                    "send_failed",
+                    sendError.GetType().Name + ": " + sendError.Message);
+            }
+        }
+
+        private void OnRetryTimer(object state)
+        {
+            int generation = (int)state;
+            lock (stateLock)
+            {
+                if (disposed || !initialized || generation != retryGeneration)
+                {
+                    return;
+                }
+                if (retryTimer != null)
+                {
+                    try { retryTimer.Dispose(); } catch { }
+                    retryTimer = null;
+                }
+            }
+            RequestRefreshCore(false);
         }
 
         private static ProcessStartInfo CreateStartInfo()
@@ -404,13 +467,30 @@ namespace CodexQuotaBall
                     {
                         initialized = true;
                     }
-                    SendLine("{\"method\":\"initialized\",\"params\":{}}");
+                    Exception sendError;
+                    if (!SendLine("{\"method\":\"initialized\",\"params\":{}}", out sendError))
+                    {
+                        AppSettings.LogRealtimeError(
+                            "发送 initialized",
+                            sendError.GetType().Name + ": " + sendError.Message);
+                        RaiseStatus("实时接口通信失败，使用本地快照", false);
+                        return;
+                    }
                     RaiseStatus("实时接口已连接，正在读取额度…", false);
                     RequestRefresh();
                     return;
                 }
 
-                if (result != null)
+                bool isRateLimitRequest = false;
+                if (id.HasValue)
+                {
+                    lock (stateLock)
+                    {
+                        isRateLimitRequest = rateLimitRequestIds.Remove(id.Value);
+                    }
+                }
+
+                if (isRateLimitRequest && result != null)
                 {
                     IDictionary<string, object> rateLimits = FindRateLimits(result);
                     if (rateLimits != null)
@@ -419,15 +499,47 @@ namespace CodexQuotaBall
                             rateLimits,
                             "Codex 实时接口",
                             true);
-                        RaiseSnapshot(snapshot, false);
-                        RaiseStatus("实时同步中", true);
+                        if (snapshot != null && snapshot.HasQuotaData)
+                        {
+                            MarkQuerySuccess();
+                            RaiseSnapshot(snapshot, false);
+                            RaiseStatus("实时同步中", true);
+                            return;
+                        }
                     }
+                    HandleQueryFailure(
+                        id,
+                        "invalid_result",
+                        "额度查询成功响应中没有可用的 rateLimits 数据。");
+                    return;
+                }
+
+                if (isRateLimitRequest && error != null)
+                {
+                    HandleQueryFailure(
+                        id,
+                        QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "code")),
+                        QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "message")));
+                    return;
+                }
+
+                if (isRateLimitRequest)
+                {
+                    HandleQueryFailure(
+                        id,
+                        "invalid_response",
+                        "额度查询响应同时缺少 result 和 error。");
                     return;
                 }
 
                 if (error != null)
                 {
-                    RaiseStatus("实时查询失败，使用本地快照", false);
+                    string errorDetails = FormatRpcError(id, error);
+                    AppSettings.LogRealtimeError("app-server RPC", errorDetails);
+                    if (id.HasValue && id.Value == 0)
+                    {
+                        RaiseStatus("实时接口初始化失败，使用本地快照", false);
+                    }
                 }
                 return;
             }
@@ -446,10 +558,120 @@ namespace CodexQuotaBall
                         rateLimits,
                         "Codex 实时推送",
                         true);
-                    RaiseSnapshot(update, true);
-                    RaiseStatus("实时同步中", true);
+                    if (update != null && update.HasQuotaData)
+                    {
+                        MarkQuerySuccess();
+                        RaiseSnapshot(update, true);
+                        RaiseStatus("实时同步中", true);
+                    }
                 }
             }
+        }
+
+        private void MarkQuerySuccess()
+        {
+            lock (stateLock)
+            {
+                retryPolicy.Reset();
+                hasSuccessfulLiveQuery = true;
+                rateLimitRequestIds.Clear();
+                CancelRetryTimerLocked();
+            }
+        }
+
+        private void HandleQueryFailure(long? requestId, string code, string message)
+        {
+            string normalizedCode = String.IsNullOrWhiteSpace(code) ? "unknown" : code;
+            string normalizedMessage = String.IsNullOrWhiteSpace(message) ? "未提供错误消息。" : message;
+            RealtimeRetryDecision decision;
+            bool keepLiveStatus;
+            lock (stateLock)
+            {
+                if (disposed || !initialized)
+                {
+                    return;
+                }
+                decision = retryPolicy.RegisterFailure();
+                keepLiveStatus = hasSuccessfulLiveQuery && !decision.UseLocalFallback;
+                ScheduleRetryLocked(decision.Delay);
+            }
+
+            string delayText = Convert.ToInt32(decision.Delay.TotalSeconds)
+                .ToString(CultureInfo.InvariantCulture);
+            AppSettings.LogRealtimeError(
+                "额度查询失败",
+                "requestId=" + (requestId.HasValue
+                    ? requestId.Value.ToString(CultureInfo.InvariantCulture)
+                    : "unknown")
+                    + "; code=" + normalizedCode
+                    + "; consecutiveFailures="
+                    + decision.ConsecutiveFailures.ToString(CultureInfo.InvariantCulture)
+                    + "; retryDelaySeconds=" + delayText
+                    + "; localFallback=" + decision.UseLocalFallback.ToString()
+                    + "; message=" + normalizedMessage);
+            if (decision.UseLocalFallback)
+            {
+                RaiseStatus(
+                    "实时查询连续失败 "
+                        + decision.ConsecutiveFailures.ToString(CultureInfo.InvariantCulture)
+                        + " 次，使用本地快照；" + delayText + " 秒后重试",
+                    false);
+            }
+            else
+            {
+                RaiseStatus(
+                    "正在重试实时查询（" + delayText + " 秒后，"
+                        + decision.ConsecutiveFailures.ToString(CultureInfo.InvariantCulture)
+                        + "/" + RealtimeRetryPolicy.LocalFallbackThreshold.ToString(CultureInfo.InvariantCulture)
+                        + "）",
+                    keepLiveStatus);
+            }
+        }
+
+        private void ScheduleRetryLocked(TimeSpan delay)
+        {
+            CancelRetryTimerLocked();
+            if (disposed || !initialized)
+            {
+                return;
+            }
+
+            int generation = retryGeneration;
+            int delayMilliseconds = Convert.ToInt32(Math.Min(
+                Int32.MaxValue,
+                Math.Max(1.0, delay.TotalMilliseconds)));
+            retryTimer = new Timer(OnRetryTimer, generation, delayMilliseconds, Timeout.Infinite);
+        }
+
+        private void CancelRetryTimerLocked()
+        {
+            retryGeneration++;
+            Timer active = retryTimer;
+            retryTimer = null;
+            if (active != null)
+            {
+                try { active.Dispose(); } catch { }
+            }
+        }
+
+        private void ResetQueryStateLocked()
+        {
+            retryPolicy.Reset();
+            hasSuccessfulLiveQuery = false;
+            rateLimitRequestIds.Clear();
+            CancelRetryTimerLocked();
+        }
+
+        private static string FormatRpcError(long? requestId, IDictionary<string, object> error)
+        {
+            string code = QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "code")) ?? "unknown";
+            string message = QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "message"))
+                ?? "未提供错误消息。";
+            return "requestId=" + (requestId.HasValue
+                ? requestId.Value.ToString(CultureInfo.InvariantCulture)
+                : "unknown")
+                + "; code=" + code
+                + "; message=" + message;
         }
 
         private static IDictionary<string, object> FindRateLimits(IDictionary<string, object> result)
@@ -497,19 +719,31 @@ namespace CodexQuotaBall
 
         private void OnProcessExited(object sender, EventArgs args)
         {
+            string exitCode = "unknown";
+            Process exitedProcess = sender as Process;
+            if (exitedProcess != null)
+            {
+                try { exitCode = exitedProcess.ExitCode.ToString(CultureInfo.InvariantCulture); } catch { }
+            }
+
             lock (stateLock)
             {
                 initialized = false;
+                ResetQueryStateLocked();
             }
 
             if (!disposed)
             {
+                AppSettings.LogRealtimeError(
+                    "Codex app-server 已退出",
+                    "exitCode=" + exitCode);
                 RaiseStatus("实时接口已断开，使用本地快照", false);
             }
         }
 
-        private void SendLine(string line)
+        private bool SendLine(string line, out Exception error)
         {
+            error = null;
             lock (inputLock)
             {
                 Process active;
@@ -520,17 +754,20 @@ namespace CodexQuotaBall
 
                 if (active == null || SafeHasExited(active))
                 {
-                    return;
+                    error = new InvalidOperationException("Codex app-server 当前未运行。");
+                    return false;
                 }
 
                 try
                 {
                     active.StandardInput.WriteLine(line);
                     active.StandardInput.Flush();
+                    return true;
                 }
-                catch
+                catch (Exception exception)
                 {
-                    RaiseStatus("实时接口通信失败，使用本地快照", false);
+                    error = exception;
+                    return false;
                 }
             }
         }
@@ -576,6 +813,7 @@ namespace CodexQuotaBall
             lock (stateLock)
             {
                 initialized = false;
+                ResetQueryStateLocked();
                 active = process;
                 process = null;
             }

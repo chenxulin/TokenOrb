@@ -13,8 +13,13 @@ namespace CodexQuotaBall
 {
     public static class Program
     {
+#if QA
+        private const string UiMutexName = "Local\\CodexQuotaBall.QA.Singleton";
+        private const string WatcherMutexName = "Local\\CodexQuotaBall.QA.Watcher";
+#else
         private const string UiMutexName = "Local\\CodexQuotaBall.Singleton";
         private const string WatcherMutexName = "Local\\CodexQuotaBall.Watcher";
+#endif
 
         [STAThread]
         public static void Main(string[] args)

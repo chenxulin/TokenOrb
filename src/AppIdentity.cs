@@ -16,6 +16,6 @@ namespace CodexQuotaBall
         public const string DisplayVersion = "v1.2";
         public const string ProtocolVersion = "1.2.0";
         public const string Publisher = "chenxulin";
-        public const string ReleaseDateText = "发布于 2026年7月21日";
+        public const string ReleaseDateText = "发布于 2026年7月22日";
     }
 }

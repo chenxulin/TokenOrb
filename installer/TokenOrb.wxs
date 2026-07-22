@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product
-      Id="{76236174-D7FC-42EF-983D-9CEBB65C5E92}"
+      Id="*"
       Name="Token Orb"
       Language="2052"
       Codepage="936"
@@ -17,8 +17,30 @@
 
     <MajorUpgrade
         Schedule="afterInstallInitialize"
-        DowngradeErrorMessage="A newer version of Token Orb is already installed." />
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="已安装更高版本的 Token Orb，无法降级安装。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <CustomAction
+        Id="SetStopTokenOrbCommand"
+        Property="WixQuietExecCmdLine"
+        Value="&quot;[SystemFolder]taskkill.exe&quot; /F /T /IM TokenOrb.exe"
+        Execute="immediate" />
+    <CustomAction
+        Id="StopTokenOrbProcesses"
+        BinaryKey="WixCA"
+        DllEntry="WixQuietExec"
+        Execute="immediate"
+        Return="ignore"
+        Impersonate="yes" />
+    <InstallExecuteSequence>
+      <Custom Action="SetStopTokenOrbCommand" Before="StopTokenOrbProcesses">
+        Installed OR WIX_UPGRADE_DETECTED
+      </Custom>
+      <Custom Action="StopTokenOrbProcesses" Before="InstallValidate">
+        Installed OR WIX_UPGRADE_DETECTED
+      </Custom>
+    </InstallExecuteSequence>
 
     <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="ARPNOREPAIR" Value="1" />

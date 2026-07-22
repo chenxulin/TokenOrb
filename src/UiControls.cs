@@ -19,6 +19,7 @@ namespace CodexQuotaBall
         public static Color Amber = Color.FromRgb(239, 169, 66);
         public static Color Red = Color.FromRgb(232, 100, 119);
         public static Color Blue = Color.FromRgb(47, 164, 235);
+        public static Color OuterRingBlue = Color.FromRgb(125, 211, 252);
 
         public static SolidColorBrush Brush(Color color)
         {
@@ -120,12 +121,16 @@ namespace CodexQuotaBall
         public const double DefaultDiameter = 60.0;
         public const double MinimumDiameter = 24.0;
         public const double MaximumDiameter = 160.0;
+        internal const double OuterRingBreathingCycleSeconds = 3.0;
+        internal const double BodyLightCycleSeconds = 5.6;
         private QuotaSnapshot snapshot;
         private bool connected;
         private string statusText = "正在连接";
         private Color accentColor = UiPalette.Blue;
         private readonly DispatcherTimer waveTimer;
         private double wavePhase;
+        private double breathPhase;
+        private double bodyLightPhase;
 
         public QuotaBallVisual()
         {
@@ -194,28 +199,150 @@ namespace CodexQuotaBall
             QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.MostRestrictiveWindow;
             double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
             bool depleted = limitingWindow != null && remaining <= 0.0;
+            Point bodyLightOffset = CalculateBodyLightOffset(bodyLightPhase);
+            double bodyLightStrength = CalculateBodyLightStrength(bodyLightPhase);
+            double bodyPulseScale = CalculateBodyPulseScale(bodyLightPhase);
+            drawingContext.PushTransform(new ScaleTransform(
+                bodyPulseScale,
+                bodyPulseScale,
+                center.X,
+                center.Y));
             RadialGradientBrush background = new RadialGradientBrush();
-            background.Center = new Point(0.38, 0.32);
-            background.GradientOrigin = new Point(0.30, 0.24);
-            background.RadiusX = 0.80;
-            background.RadiusY = 0.80;
+            background.Center = new Point(
+                0.38 + bodyLightOffset.X,
+                0.32 + bodyLightOffset.Y);
+            background.GradientOrigin = new Point(
+                0.30 + bodyLightOffset.X * 1.15,
+                0.24 + bodyLightOffset.Y * 1.15);
+            background.RadiusX = 0.77 + 0.055 * bodyLightStrength;
+            background.RadiusY = 0.78 + 0.045 * bodyLightStrength;
             background.GradientStops.Add(new GradientStop(Mix(accentColor, Colors.White, 0.97), 0.0));
-            background.GradientStops.Add(new GradientStop(Mix(accentColor, Colors.White, 0.78), 0.58));
-            background.GradientStops.Add(new GradientStop(Mix(accentColor, Colors.White, 0.45), 1.0));
+            background.GradientStops.Add(new GradientStop(
+                Mix(accentColor, Colors.White, 0.650 + 0.150 * bodyLightStrength),
+                0.58));
+            background.GradientStops.Add(new GradientStop(
+                Mix(accentColor, Colors.White, 0.320 + 0.160 * bodyLightStrength),
+                1.0));
 
             Color outerBorderColor = ResolveOuterBorderColor(
                 accentColor,
                 limitingWindow == null ? (double?)null : remaining);
-            double outerBorderWidth = depleted
-                ? Math.Max(2.0, Math.Min(6.0, size * 0.045))
-                : Math.Max(0.7, size * 0.021);
+            double outerBorderWidth = CalculateOuterBorderWidth(size, depleted);
+
+            double breathStrength = CalculateBreathStrength(breathPhase);
+            byte outerBorderAlpha = CalculateOuterRingAlpha(breathStrength, depleted);
+            byte outerGlowAlpha = (byte)Math.Round(
+                (depleted ? 14.0 : 18.0) + (depleted ? 30.0 : 36.0) * breathStrength);
+            double outerGlowWidth = outerBorderWidth + Math.Max(
+                1.6,
+                Math.Min(6.0, size * (0.034 + 0.018 * breathStrength)));
+            Color renderedOuterBorderColor = Color.FromArgb(
+                outerBorderAlpha,
+                outerBorderColor.R,
+                outerBorderColor.G,
+                outerBorderColor.B);
+            Color outerGlowColor = Color.FromArgb(
+                outerGlowAlpha,
+                outerBorderColor.R,
+                outerBorderColor.G,
+                outerBorderColor.B);
 
             drawingContext.DrawEllipse(
-                background,
-                new Pen(UiPalette.Brush(outerBorderColor), outerBorderWidth),
+                null,
+                new Pen(UiPalette.Brush(outerGlowColor), outerGlowWidth),
                 center,
                 outerRadius,
                 outerRadius);
+
+            drawingContext.DrawEllipse(
+                background,
+                new Pen(UiPalette.Brush(renderedOuterBorderColor), outerBorderWidth),
+                center,
+                outerRadius,
+                outerRadius);
+
+            RadialGradientBrush bodyHighlight = new RadialGradientBrush();
+            Point highlightCenter = new Point(
+                0.30 + bodyLightOffset.X * 1.40,
+                0.26 + bodyLightOffset.Y * 1.30);
+            bodyHighlight.Center = highlightCenter;
+            bodyHighlight.GradientOrigin = highlightCenter;
+            bodyHighlight.RadiusX = 0.42;
+            bodyHighlight.RadiusY = 0.36;
+            byte highlightAlpha = CalculateBodyHighlightAlpha(bodyLightStrength);
+            bodyHighlight.GradientStops.Add(new GradientStop(
+                Color.FromArgb(highlightAlpha, 255, 255, 255),
+                0.0));
+            bodyHighlight.GradientStops.Add(new GradientStop(
+                Color.FromArgb(0, 255, 255, 255),
+                0.84));
+            double bodyHighlightRadius = Math.Max(
+                2.0,
+                outerRadius - outerBorderWidth * 0.56);
+            drawingContext.DrawEllipse(
+                bodyHighlight,
+                null,
+                center,
+                bodyHighlightRadius,
+                bodyHighlightRadius);
+
+            Point sheenOffset = CalculateBodySheenOffset(bodyLightPhase);
+            Point sheenCenter = new Point(
+                center.X + outerRadius * sheenOffset.X,
+                center.Y + outerRadius * sheenOffset.Y);
+            byte sheenAlpha = CalculateBodySheenAlpha(bodyLightStrength);
+            Color sheenTint = Mix(accentColor, Colors.White, 0.35);
+            RadialGradientBrush bodySheen = new RadialGradientBrush();
+            bodySheen.Center = new Point(0.42, 0.40);
+            bodySheen.GradientOrigin = bodySheen.Center;
+            bodySheen.RadiusX = 0.58;
+            bodySheen.RadiusY = 0.58;
+            bodySheen.GradientStops.Add(new GradientStop(
+                Color.FromArgb(sheenAlpha, sheenTint.R, sheenTint.G, sheenTint.B),
+                0.0));
+            bodySheen.GradientStops.Add(new GradientStop(
+                Color.FromArgb(
+                    (byte)(sheenAlpha / 3),
+                    sheenTint.R,
+                    sheenTint.G,
+                    sheenTint.B),
+                0.48));
+            bodySheen.GradientStops.Add(new GradientStop(
+                Color.FromArgb(0, sheenTint.R, sheenTint.G, sheenTint.B),
+                1.0));
+            drawingContext.PushClip(new EllipseGeometry(
+                center,
+                bodyHighlightRadius,
+                bodyHighlightRadius));
+            drawingContext.DrawEllipse(
+                bodySheen,
+                null,
+                sheenCenter,
+                Math.Max(2.2, outerRadius * 0.30),
+                Math.Max(1.3, outerRadius * 0.13));
+
+            byte sheenCoreAlpha = CalculateBodySheenCoreAlpha(bodyLightStrength);
+            RadialGradientBrush sheenCore = new RadialGradientBrush();
+            sheenCore.Center = new Point(0.42, 0.38);
+            sheenCore.GradientOrigin = sheenCore.Center;
+            sheenCore.RadiusX = 0.62;
+            sheenCore.RadiusY = 0.62;
+            sheenCore.GradientStops.Add(new GradientStop(
+                Color.FromArgb(sheenCoreAlpha, 255, 255, 255),
+                0.0));
+            sheenCore.GradientStops.Add(new GradientStop(
+                Color.FromArgb(0, 255, 255, 255),
+                1.0));
+            drawingContext.DrawEllipse(
+                sheenCore,
+                null,
+                new Point(
+                    sheenCenter.X - outerRadius * 0.04,
+                    sheenCenter.Y - outerRadius * 0.035),
+                Math.Max(1.3, outerRadius * 0.115),
+                Math.Max(0.8, outerRadius * 0.050));
+
+            drawingContext.Pop();
 
             Color accent = limitingWindow == null ? UiPalette.Blue : UiPalette.QuotaColor(remaining);
             double ringWidth = Math.Max(1.8, Math.Min(8.0, size * 0.066));
@@ -254,6 +381,8 @@ namespace CodexQuotaBall
                     drawingContext.DrawGeometry(null, accentPen, arc);
                 }
             }
+
+            drawingContext.Pop();
 
             string numberText = limitingWindow == null
                 ? "--"
@@ -297,7 +426,89 @@ namespace CodexQuotaBall
             {
                 return UiPalette.Red;
             }
-            return Mix(appearanceAccent, Colors.Black, 0.08);
+            return UiPalette.OuterRingBlue;
+        }
+
+        internal static double CalculateBreathStrength(double phase)
+        {
+            if (Double.IsNaN(phase) || Double.IsInfinity(phase))
+            {
+                return 0.5;
+            }
+            return 0.5 + 0.5 * Math.Sin(phase);
+        }
+
+        internal static Point CalculateBodyLightOffset(double phase)
+        {
+            if (Double.IsNaN(phase) || Double.IsInfinity(phase))
+            {
+                return new Point(0.0, 0.0);
+            }
+            return new Point(
+                Math.Sin(phase) * 0.075,
+                Math.Cos(phase) * 0.040);
+        }
+
+        internal static double CalculateBodyLightStrength(double phase)
+        {
+            if (Double.IsNaN(phase) || Double.IsInfinity(phase))
+            {
+                return 0.5;
+            }
+            return 0.5 + 0.5 * Math.Sin(phase);
+        }
+
+        internal static double CalculateBodyPulseScale(double phase)
+        {
+            if (Double.IsNaN(phase) || Double.IsInfinity(phase))
+            {
+                return 1.0;
+            }
+            return 1.0 + Math.Sin(phase) * 0.040;
+        }
+
+        internal static Point CalculateBodySheenOffset(double phase)
+        {
+            if (Double.IsNaN(phase) || Double.IsInfinity(phase))
+            {
+                return new Point(0.0, -0.26);
+            }
+            return new Point(
+                Math.Sin(phase) * 0.36,
+                -0.34 + Math.Cos(phase) * 0.040);
+        }
+
+        internal static byte CalculateBodyHighlightAlpha(double bodyLightStrength)
+        {
+            double safeStrength = Math.Max(0.0, Math.Min(1.0, bodyLightStrength));
+            return (byte)Math.Round(28.0 + 44.0 * safeStrength);
+        }
+
+        internal static byte CalculateBodySheenAlpha(double bodyLightStrength)
+        {
+            double safeStrength = Math.Max(0.0, Math.Min(1.0, bodyLightStrength));
+            return (byte)Math.Round(125.0 + 70.0 * safeStrength);
+        }
+
+        internal static byte CalculateBodySheenCoreAlpha(double bodyLightStrength)
+        {
+            double safeStrength = Math.Max(0.0, Math.Min(1.0, bodyLightStrength));
+            return (byte)Math.Round(180.0 + 55.0 * safeStrength);
+        }
+
+        internal static double CalculateOuterBorderWidth(double size, bool depleted)
+        {
+            double safeSize = Math.Max(0.0, size);
+            return depleted
+                ? Math.Max(2.0, Math.Min(6.0, safeSize * 0.040))
+                : Math.Max(1.1, Math.Min(4.5, safeSize * 0.030));
+        }
+
+        internal static byte CalculateOuterRingAlpha(double breathStrength, bool depleted)
+        {
+            double safeStrength = Math.Max(0.0, Math.Min(1.0, breathStrength));
+            double minimumAlpha = depleted ? 210.0 : 170.0;
+            return (byte)Math.Round(minimumAlpha + (255.0 - minimumAlpha) * safeStrength);
         }
 
         internal static Color ResolveQuotaTextColor(Color appearanceAccent, double? remaining)
@@ -315,6 +526,18 @@ namespace CodexQuotaBall
             if (wavePhase >= Math.PI * 2.0)
             {
                 wavePhase -= Math.PI * 2.0;
+            }
+            breathPhase += Math.PI * 2.0 * waveTimer.Interval.TotalSeconds
+                / OuterRingBreathingCycleSeconds;
+            if (breathPhase >= Math.PI * 2.0)
+            {
+                breathPhase -= Math.PI * 2.0;
+            }
+            bodyLightPhase += Math.PI * 2.0 * waveTimer.Interval.TotalSeconds
+                / BodyLightCycleSeconds;
+            if (bodyLightPhase >= Math.PI * 2.0)
+            {
+                bodyLightPhase -= Math.PI * 2.0;
             }
             InvalidateVisual();
         }
