@@ -10,6 +10,15 @@ Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
 2. 启动 Token Orb。
 3. Token Orb 会在 Codex 桌面应用启动时出现，并在 Codex 关闭后退出悬浮球界面。
 
+### 悬浮球演示图
+- 悬浮球
+![orb](./assets/orb.png)
+- 监控界面
+![main_screen](./assets/main_screen.png)
+- 右键悬浮球菜单
+![right_click_menu](./assets/right_click_menu.png)
+- 自定义悬浮球外观
+![customization](./assets/customization.png)
 ## 功能
 
 - **跟随 Codex 启动/关闭**
