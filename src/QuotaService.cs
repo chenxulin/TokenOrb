@@ -10,14 +10,18 @@ namespace CodexQuotaBall
         private readonly Dispatcher dispatcher;
         private readonly bool demoMode;
         private readonly SessionQuotaReader sessionReader;
+        private readonly CodexAuthStateTracker authStateTracker;
         private readonly CodexAppServerClient appServer;
         private readonly DispatcherTimer localDebounceTimer;
         private readonly DispatcherTimer localPollTimer;
+        private readonly DispatcherTimer authPollTimer;
         private readonly DispatcherTimer rpcRefreshTimer;
         private readonly DispatcherTimer rpcRetryTimer;
         private FileSystemWatcher watcher;
         private QuotaSnapshot currentSnapshot;
         private QuotaSnapshot liveSnapshot;
+        private DateTimeOffset? localSnapshotNotBefore;
+        private int minimumRpcGeneration;
         private bool liveConnected;
         private bool disposed;
 
@@ -29,6 +33,7 @@ namespace CodexQuotaBall
             this.dispatcher = dispatcher;
             this.demoMode = demoMode;
             sessionReader = new SessionQuotaReader(SessionQuotaReader.FindSessionsRoot());
+            authStateTracker = new CodexAuthStateTracker();
             appServer = new CodexAppServerClient();
             appServer.SnapshotReceived += OnRpcSnapshot;
             appServer.StatusChanged += OnRpcStatus;
@@ -44,6 +49,10 @@ namespace CodexQuotaBall
             localPollTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
             localPollTimer.Interval = TimeSpan.FromSeconds(20);
             localPollTimer.Tick += delegate { RefreshLocal(); };
+
+            authPollTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
+            authPollTimer.Interval = TimeSpan.FromSeconds(1);
+            authPollTimer.Tick += delegate { PollAuthState(); };
 
             rpcRefreshTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
             rpcRefreshTimer.Interval = TimeSpan.FromSeconds(30);
@@ -81,6 +90,7 @@ namespace CodexQuotaBall
             RefreshLocal();
             StartWatcher();
             localPollTimer.Start();
+            authPollTimer.Start();
             rpcRefreshTimer.Start();
             rpcRetryTimer.Start();
             RaiseConnection("正在准备 Codex 实时接口…", false);
@@ -97,18 +107,48 @@ namespace CodexQuotaBall
             }
 
             RefreshLocal();
+            liveSnapshot = null;
+            minimumRpcGeneration = appServer.CurrentGeneration + 1;
+            appServer.InvalidateAuthentication();
             RaiseConnection("正在刷新实时额度…", false);
             RunAppServerBackground(delegate
             {
-                if (appServer.IsRunning)
-                {
-                    appServer.RequestRefresh();
-                }
-                else
-                {
-                    appServer.Restart();
-                }
+                // A running app-server keeps its authentication cached. Reconnect so
+                // manual refresh also picks up an account switch stored by Codex.
+                appServer.Restart();
             });
+        }
+
+        private void PollAuthState()
+        {
+            if (disposed || demoMode)
+            {
+                return;
+            }
+
+            bool changed;
+            try
+            {
+                changed = authStateTracker.PollForStableChange();
+            }
+            catch
+            {
+                return;
+            }
+            if (!changed)
+            {
+                return;
+            }
+
+            localSnapshotNotBefore = DateTimeOffset.Now;
+            liveSnapshot = null;
+            currentSnapshot = null;
+            liveConnected = false;
+            minimumRpcGeneration = appServer.CurrentGeneration + 1;
+            appServer.InvalidateAuthentication();
+            RaiseSnapshot(null);
+            RaiseConnection("检测到 Codex 账号变化，正在刷新额度…", false);
+            RunAppServerBackground(appServer.Restart);
         }
 
         private void RunAppServerBackground(Action action)
@@ -125,7 +165,10 @@ namespace CodexQuotaBall
                 }
                 catch
                 {
-                    OnRpcStatus("实时接口不可用，使用本地快照", false);
+                    OnRpcStatus(
+                        "实时接口不可用，使用本地快照",
+                        false,
+                        appServer.CurrentGeneration);
                 }
             });
         }
@@ -198,6 +241,13 @@ namespace CodexQuotaBall
                 return;
             }
 
+            if (!AccountSwitchQuotaPolicy.CanUseLocalSnapshot(local, localSnapshotNotBefore))
+            {
+                // Session files do not carry a reliable account identity. Do not let a
+                // pre-switch fallback snapshot repopulate the cleared old-account UI.
+                return;
+            }
+
             if (!liveConnected)
             {
                 bool changed = currentSnapshot == null
@@ -211,11 +261,15 @@ namespace CodexQuotaBall
             }
         }
 
-        private void OnRpcSnapshot(QuotaSnapshot snapshot, bool sparse)
+        private void OnRpcSnapshot(QuotaSnapshot snapshot, bool sparse, int generation)
         {
             dispatcher.BeginInvoke(new Action(delegate
             {
-                if (disposed || snapshot == null)
+                if (disposed
+                    || snapshot == null
+                    || !AccountSwitchQuotaPolicy.CanUseRpcGeneration(
+                        generation,
+                        minimumRpcGeneration))
                 {
                     return;
                 }
@@ -230,11 +284,14 @@ namespace CodexQuotaBall
             }));
         }
 
-        private void OnRpcStatus(string text, bool connected)
+        private void OnRpcStatus(string text, bool connected, int generation)
         {
             dispatcher.BeginInvoke(new Action(delegate
             {
-                if (disposed)
+                if (disposed
+                    || !AccountSwitchQuotaPolicy.CanUseRpcGeneration(
+                        generation,
+                        minimumRpcGeneration))
                 {
                     return;
                 }
@@ -307,6 +364,7 @@ namespace CodexQuotaBall
 
             localDebounceTimer.Stop();
             localPollTimer.Stop();
+            authPollTimer.Stop();
             rpcRefreshTimer.Stop();
             rpcRetryTimer.Stop();
 

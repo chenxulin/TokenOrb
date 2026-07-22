@@ -493,6 +493,11 @@ namespace CodexQuotaBall
 
         public static string FindSessionsRoot()
         {
+            return Path.Combine(FindCodexHome(), "sessions");
+        }
+
+        public static string FindCodexHome()
+        {
             string codexHome = Environment.GetEnvironmentVariable("CODEX_HOME");
             if (String.IsNullOrWhiteSpace(codexHome))
             {
@@ -500,7 +505,7 @@ namespace CodexQuotaBall
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     ".codex");
             }
-            return Path.Combine(codexHome, "sessions");
+            return codexHome;
         }
 
         public QuotaSnapshot LoadLatest()

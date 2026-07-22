@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 
 namespace CodexQuotaBall
 {
@@ -15,6 +16,8 @@ namespace CodexQuotaBall
                 TestLocalSnakeCaseEvent();
                 TestRpcCamelCasePayload();
                 TestSparseMerge();
+                TestCodexAuthStateTracking();
+                TestAccountSwitchQuotaPolicy();
                 TestRealtimeRetryPolicy();
                 TestWindowNames();
                 TestCodexDesktopProcessMatching();
@@ -101,6 +104,73 @@ namespace CodexQuotaBall
             Assert(merged.Credits != null && merged.Credits.Balance == "10.5", "Sparse merge keeps credits");
             Assert(merged.PlanType == "plus", "Sparse merge keeps plan");
             Assert(merged.Source == "push", "Sparse merge uses latest source");
+        }
+
+        private static void TestCodexAuthStateTracking()
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(),
+                "TokenOrb.AuthTrackerTests-" + Guid.NewGuid().ToString("N"));
+            string authFile = Path.Combine(directory, "auth.json");
+            Directory.CreateDirectory(directory);
+            try
+            {
+                File.WriteAllText(authFile, CreateTestAuthJson("account-a", "access-a", "refresh-a"));
+                CodexAuthStateTracker tracker = new CodexAuthStateTracker(authFile);
+                Assert(!tracker.PollForStableChange(), "Unchanged auth should not trigger a refresh");
+
+                File.WriteAllText(authFile, CreateTestAuthJson("account-a", "access-new", "refresh-new"));
+                Assert(!tracker.PollForStableChange(), "Rotated tokens for the same account should be ignored");
+                Assert(!tracker.PollForStableChange(), "Stable token rotation should remain ignored");
+
+                File.WriteAllText(authFile, CreateTestAuthJson("account-b", "access-b", "refresh-b"));
+                Assert(!tracker.PollForStableChange(), "A new account should be debounced once");
+                Assert(tracker.PollForStableChange(), "A stable new account should trigger a refresh");
+                Assert(!tracker.PollForStableChange(), "An account change should be reported only once");
+
+                File.Delete(authFile);
+                Assert(!tracker.PollForStableChange(), "Logout should be debounced once");
+                Assert(tracker.PollForStableChange(), "A stable logout should trigger a refresh");
+            }
+            finally
+            {
+                try { Directory.Delete(directory, true); } catch { }
+            }
+        }
+
+        private static string CreateTestAuthJson(string accountId, string accessToken, string refreshToken)
+        {
+            return "{\"auth_mode\":\"chatgpt\",\"tokens\":{\"account_id\":\""
+                + accountId + "\",\"access_token\":\"" + accessToken
+                + "\",\"refresh_token\":\"" + refreshToken + "\"}}";
+        }
+
+        private static void TestAccountSwitchQuotaPolicy()
+        {
+            DateTimeOffset switchedAt = DateTimeOffset.Now;
+            QuotaSnapshot beforeSwitch = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 70 },
+                CapturedAt = switchedAt.AddSeconds(-1)
+            };
+            QuotaSnapshot afterSwitch = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 20 },
+                CapturedAt = switchedAt.AddSeconds(1)
+            };
+
+            Assert(!AccountSwitchQuotaPolicy.CanUseLocalSnapshot(beforeSwitch, switchedAt),
+                "A pre-switch local snapshot must not restore the old account quota");
+            Assert(AccountSwitchQuotaPolicy.CanUseLocalSnapshot(afterSwitch, switchedAt),
+                "A post-switch local snapshot should remain available as fallback");
+            Assert(AccountSwitchQuotaPolicy.CanUseLocalSnapshot(beforeSwitch, null),
+                "Local fallback should retain its startup behavior before an account switch");
+            Assert(!AccountSwitchQuotaPolicy.CanUseLocalSnapshot(null, switchedAt),
+                "A missing local snapshot should not be eligible");
+            Assert(!AccountSwitchQuotaPolicy.CanUseRpcGeneration(4, 5),
+                "A response from the invalidated app-server must be ignored");
+            Assert(AccountSwitchQuotaPolicy.CanUseRpcGeneration(5, 5),
+                "The replacement app-server generation should be accepted");
         }
 
         private static void TestRealtimeRetryPolicy()
@@ -197,8 +267,8 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.2", "Display version should be v1.2");
-            Assert(AppIdentity.ProtocolVersion == "1.2.0", "Protocol version should be semantic v1.2");
+            Assert(AppIdentity.DisplayVersion == "v1.3", "Display version should be v1.3");
+            Assert(AppIdentity.ProtocolVersion == "1.3.0", "Protocol version should be semantic v1.3");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 

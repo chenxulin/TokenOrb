@@ -17,13 +17,15 @@ namespace CodexQuotaBall
         private Process process;
         private Timer retryTimer;
         private bool initialized;
+        private bool authenticationInvalidated;
         private bool hasSuccessfulLiveQuery;
         private bool disposed;
         private int retryGeneration;
+        private int processGeneration;
         private int nextRequestId = 10;
 
-        public event Action<QuotaSnapshot, bool> SnapshotReceived;
-        public event Action<string, bool> StatusChanged;
+        public event Action<QuotaSnapshot, bool, int> SnapshotReceived;
+        public event Action<string, bool, int> StatusChanged;
 
         public bool IsRunning
         {
@@ -47,6 +49,17 @@ namespace CodexQuotaBall
             }
         }
 
+        public int CurrentGeneration
+        {
+            get
+            {
+                lock (stateLock)
+                {
+                    return processGeneration;
+                }
+            }
+        }
+
         public void Start()
         {
             lock (stateLock)
@@ -57,6 +70,8 @@ namespace CodexQuotaBall
                 }
 
                 initialized = false;
+                authenticationInvalidated = false;
+                processGeneration++;
                 ResetQueryStateLocked();
                 Process newProcess = new Process();
                 try
@@ -110,6 +125,20 @@ namespace CodexQuotaBall
         {
             StopProcess();
             Start();
+        }
+
+        public void InvalidateAuthentication()
+        {
+            lock (stateLock)
+            {
+                if (disposed)
+                {
+                    return;
+                }
+                authenticationInvalidated = true;
+                initialized = false;
+                ResetQueryStateLocked();
+            }
         }
 
         private void RequestRefreshCore(bool cancelScheduledRetry)
@@ -446,6 +475,16 @@ namespace CodexQuotaBall
                 return;
             }
 
+            lock (stateLock)
+            {
+                if (disposed
+                    || authenticationInvalidated
+                    || !Object.ReferenceEquals(process, sender as Process))
+                {
+                    return;
+                }
+            }
+
             IDictionary<string, object> message = QuotaJsonParser.ParseObject(args.Data);
             if (message == null)
             {
@@ -465,6 +504,11 @@ namespace CodexQuotaBall
                 {
                     lock (stateLock)
                     {
+                        if (authenticationInvalidated
+                            || !Object.ReferenceEquals(process, sender as Process))
+                        {
+                            return;
+                        }
                         initialized = true;
                     }
                     Exception sendError;
@@ -501,16 +545,23 @@ namespace CodexQuotaBall
                             true);
                         if (snapshot != null && snapshot.HasQuotaData)
                         {
-                            MarkQuerySuccess();
-                            RaiseSnapshot(snapshot, false);
-                            RaiseStatus("实时同步中", true);
+                            if (!MarkQuerySuccess(sender as Process))
+                            {
+                                return;
+                            }
+                            int generation = RaiseSnapshot(snapshot, false, sender as Process);
+                            if (generation >= 0)
+                            {
+                                RaiseStatus("实时同步中", true, generation);
+                            }
                             return;
                         }
                     }
                     HandleQueryFailure(
                         id,
                         "invalid_result",
-                        "额度查询成功响应中没有可用的 rateLimits 数据。");
+                        "额度查询成功响应中没有可用的 rateLimits 数据。",
+                        sender as Process);
                     return;
                 }
 
@@ -519,7 +570,8 @@ namespace CodexQuotaBall
                     HandleQueryFailure(
                         id,
                         QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "code")),
-                        QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "message")));
+                        QuotaJsonParser.AsString(QuotaJsonParser.GetAny(error, "message")),
+                        sender as Process);
                     return;
                 }
 
@@ -528,7 +580,8 @@ namespace CodexQuotaBall
                     HandleQueryFailure(
                         id,
                         "invalid_response",
-                        "额度查询响应同时缺少 result 和 error。");
+                        "额度查询响应同时缺少 result 和 error。",
+                        sender as Process);
                     return;
                 }
 
@@ -560,26 +613,48 @@ namespace CodexQuotaBall
                         true);
                     if (update != null && update.HasQuotaData)
                     {
-                        MarkQuerySuccess();
-                        RaiseSnapshot(update, true);
-                        RaiseStatus("实时同步中", true);
+                        if (!MarkQuerySuccess(sender as Process))
+                        {
+                            return;
+                        }
+                        int generation = RaiseSnapshot(update, true, sender as Process);
+                        if (generation >= 0)
+                        {
+                            RaiseStatus("实时同步中", true, generation);
+                        }
                     }
                 }
             }
         }
 
-        private void MarkQuerySuccess()
+        private bool MarkQuerySuccess(Process sourceProcess)
         {
             lock (stateLock)
             {
+                if (disposed
+                    || authenticationInvalidated
+                    || !Object.ReferenceEquals(process, sourceProcess))
+                {
+                    return false;
+                }
                 retryPolicy.Reset();
                 hasSuccessfulLiveQuery = true;
                 rateLimitRequestIds.Clear();
                 CancelRetryTimerLocked();
+                return true;
             }
         }
 
         private void HandleQueryFailure(long? requestId, string code, string message)
+        {
+            HandleQueryFailure(requestId, code, message, null);
+        }
+
+        private void HandleQueryFailure(
+            long? requestId,
+            string code,
+            string message,
+            Process sourceProcess)
         {
             string normalizedCode = String.IsNullOrWhiteSpace(code) ? "unknown" : code;
             string normalizedMessage = String.IsNullOrWhiteSpace(message) ? "未提供错误消息。" : message;
@@ -587,7 +662,11 @@ namespace CodexQuotaBall
             bool keepLiveStatus;
             lock (stateLock)
             {
-                if (disposed || !initialized)
+                if (disposed
+                    || !initialized
+                    || (sourceProcess != null
+                        && (authenticationInvalidated
+                            || !Object.ReferenceEquals(process, sourceProcess))))
                 {
                     return;
                 }
@@ -728,6 +807,10 @@ namespace CodexQuotaBall
 
             lock (stateLock)
             {
+                if (!Object.ReferenceEquals(process, exitedProcess))
+                {
+                    return;
+                }
                 initialized = false;
                 ResetQueryStateLocked();
             }
@@ -784,26 +867,49 @@ namespace CodexQuotaBall
             }
         }
 
-        private void RaiseSnapshot(QuotaSnapshot snapshot, bool sparse)
+        private int RaiseSnapshot(QuotaSnapshot snapshot, bool sparse, Process sourceProcess)
         {
             if (snapshot == null || !snapshot.HasQuotaData)
             {
-                return;
+                return -1;
             }
 
-            Action<QuotaSnapshot, bool> handler = SnapshotReceived;
+            Action<QuotaSnapshot, bool, int> handler;
+            int generation;
+            lock (stateLock)
+            {
+                if (disposed
+                    || authenticationInvalidated
+                    || !Object.ReferenceEquals(process, sourceProcess))
+                {
+                    return -1;
+                }
+                handler = SnapshotReceived;
+                generation = processGeneration;
+            }
             if (handler != null)
             {
-                try { handler(snapshot, sparse); } catch { }
+                try { handler(snapshot, sparse, generation); } catch { }
             }
+            return generation;
         }
 
         private void RaiseStatus(string text, bool connected)
         {
-            Action<string, bool> handler = StatusChanged;
+            int generation;
+            lock (stateLock)
+            {
+                generation = processGeneration;
+            }
+            RaiseStatus(text, connected, generation);
+        }
+
+        private void RaiseStatus(string text, bool connected, int generation)
+        {
+            Action<string, bool, int> handler = StatusChanged;
             if (handler != null)
             {
-                try { handler(text, connected); } catch { }
+                try { handler(text, connected, generation); } catch { }
             }
         }
 

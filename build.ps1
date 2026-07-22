@@ -223,6 +223,7 @@ foreach ($reference in $references) {
 $applicationSources = @(
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
+    (Join-Path $sourceDirectory "CodexAuthStateTracker.cs"),
     (Join-Path $sourceDirectory "RealtimeRetryPolicy.cs"),
     (Join-Path $sourceDirectory "AppServerClient.cs"),
     (Join-Path $sourceDirectory "QuotaService.cs"),
@@ -283,6 +284,7 @@ $testArguments = @(
     "/reference:$($referenceByName['System.Web.Extensions.dll'])",
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
+    (Join-Path $sourceDirectory "CodexAuthStateTracker.cs"),
     (Join-Path $sourceDirectory "RealtimeRetryPolicy.cs"),
     (Join-Path $sourceDirectory "BallPositioning.cs"),
     (Join-Path $sourceDirectory "UiControls.cs"),
