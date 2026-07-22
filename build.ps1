@@ -94,8 +94,18 @@ function Get-WixToolset {
     $wixRoot = Join-Path $toolsRoot "wix3141"
     $candlePath = Join-Path $wixRoot "candle.exe"
     $lightPath = Join-Path $wixRoot "light.exe"
-    if ((Test-Path $candlePath) -and (Test-Path $lightPath)) {
-        return [pscustomobject]@{ Candle = $candlePath; Light = $lightPath }
+    $darkPath = Join-Path $wixRoot "dark.exe"
+    $utilExtensionPath = Join-Path $wixRoot "WixUtilExtension.dll"
+    if ((Test-Path $candlePath) -and
+        (Test-Path $lightPath) -and
+        (Test-Path $darkPath) -and
+        (Test-Path $utilExtensionPath)) {
+        return [pscustomobject]@{
+            Candle = $candlePath
+            Light = $lightPath
+            Dark = $darkPath
+            UtilExtension = $utilExtensionPath
+        }
     }
 
     $downloadDirectory = Join-Path $toolsRoot "downloads"
@@ -129,10 +139,18 @@ function Get-WixToolset {
     }
 
     Expand-Archive -Force -LiteralPath $archivePath -DestinationPath $wixRoot
-    if (-not (Test-Path $candlePath) -or -not (Test-Path $lightPath)) {
-        throw "WiX Toolset extraction did not produce candle.exe and light.exe."
+    if (-not (Test-Path $candlePath) -or
+        -not (Test-Path $lightPath) -or
+        -not (Test-Path $darkPath) -or
+        -not (Test-Path $utilExtensionPath)) {
+        throw "WiX Toolset extraction did not produce the required compiler, linker, decompiler, and utility extension."
     }
-    return [pscustomobject]@{ Candle = $candlePath; Light = $lightPath }
+    return [pscustomobject]@{
+        Candle = $candlePath
+        Light = $lightPath
+        Dark = $darkPath
+        UtilExtension = $utilExtensionPath
+    }
 }
 
 $legacyOutputNames = @(
@@ -205,6 +223,7 @@ foreach ($reference in $references) {
 $applicationSources = @(
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
+    (Join-Path $sourceDirectory "RealtimeRetryPolicy.cs"),
     (Join-Path $sourceDirectory "AppServerClient.cs"),
     (Join-Path $sourceDirectory "QuotaService.cs"),
     (Join-Path $sourceDirectory "BallPositioning.cs"),
@@ -264,6 +283,7 @@ $testArguments = @(
     "/reference:$($referenceByName['System.Web.Extensions.dll'])",
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
+    (Join-Path $sourceDirectory "RealtimeRetryPolicy.cs"),
     (Join-Path $sourceDirectory "BallPositioning.cs"),
     (Join-Path $sourceDirectory "UiControls.cs"),
     (Join-Path $sourceDirectory "FollowCodexStartupBehavior.cs"),
@@ -291,9 +311,52 @@ Copy-Item -Force $readmeSource $readmeOutput
 
 $wix = Get-WixToolset
 $wixSource = Join-Path (Join-Path $projectRoot "installer") "TokenOrb.wxs"
-[xml]$wixDocument = Get-Content -Raw -LiteralPath $wixSource
+[xml]$wixDocument = Get-Content -Raw -Encoding UTF8 -LiteralPath $wixSource
 $wixNamespace = New-Object System.Xml.XmlNamespaceManager($wixDocument.NameTable)
 $wixNamespace.AddNamespace("w", "http://schemas.microsoft.com/wix/2006/wi")
+$product = $wixDocument.SelectSingleNode("//w:Product", $wixNamespace)
+$majorUpgrade = $wixDocument.SelectSingleNode("//w:Product/w:MajorUpgrade", $wixNamespace)
+$setStopCommand = $wixDocument.SelectSingleNode(
+    "//w:Product/w:CustomAction[@Id='SetStopTokenOrbCommand']",
+    $wixNamespace)
+$stopProcesses = $wixDocument.SelectSingleNode(
+    "//w:Product/w:CustomAction[@Id='StopTokenOrbProcesses']",
+    $wixNamespace)
+$stopSequence = $wixDocument.SelectSingleNode(
+    "//w:Product/w:InstallExecuteSequence/w:Custom[@Action='StopTokenOrbProcesses']",
+    $wixNamespace)
+if ((-not $product) -or ($product.Id -ne "*")) {
+    throw "MSI Product Id must be '*' so every release receives a new ProductCode."
+}
+if ($product.UpgradeCode -ne "{E2EE802B-B7DD-4436-ADF1-A3DF49DCD07A}") {
+    throw "MSI UpgradeCode must remain stable so new releases can find installed versions."
+}
+if ((-not $majorUpgrade) -or
+    ($majorUpgrade.Schedule -ne "afterInstallInitialize") -or
+    ($majorUpgrade.AllowSameVersionUpgrades -ne "yes")) {
+    throw "MSI must remove related versions before installation and support same-version replacement builds."
+}
+if ((-not $setStopCommand) -or
+    ($setStopCommand.Property -ne "WixQuietExecCmdLine") -or
+    ($setStopCommand.Value -notmatch "taskkill\.exe") -or
+    ($setStopCommand.Value -notmatch "/IM TokenOrb\.exe") -or
+    (-not $stopProcesses) -or
+    ($stopProcesses.BinaryKey -ne "WixCA") -or
+    ($stopProcesses.DllEntry -ne "WixQuietExec") -or
+    ($stopProcesses.Return -ne "ignore") -or
+    (-not $stopSequence) -or
+    ($stopSequence.Before -ne "InstallValidate") -or
+    ($stopSequence.InnerText -notmatch "WIX_UPGRADE_DETECTED")) {
+    throw "MSI must close a running Token Orb before replacing an installed version."
+}
+$identitySource = Get-Content -Raw -LiteralPath (Join-Path $sourceDirectory "AppIdentity.cs")
+$protocolVersionMatch = [regex]::Match(
+    $identitySource,
+    'ProtocolVersion\s*=\s*"([^"]+)"')
+if ((-not $protocolVersionMatch.Success) -or
+    ($product.Version -ne $protocolVersionMatch.Groups[1].Value)) {
+    throw "MSI Product Version must match AppIdentity.ProtocolVersion."
+}
 $autoStartValue = $wixDocument.SelectSingleNode(
     "//w:Component[@Id='TokenOrbAutoStartComponent']/w:RegistryValue[@Name='Token Orb']",
     $wixNamespace)
@@ -310,6 +373,7 @@ if (Test-Path $wixObject) {
 $candleArguments = @(
     "-nologo",
     "-arch", "x86",
+    "-ext", $wix.UtilExtension,
     "-dTokenOrbExe=$applicationPath",
     "-dTokenOrbIcon=$iconPath",
     "-out", $wixObject,
@@ -321,8 +385,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "MSI source compilation failed with exit code $LASTEXITCODE"
 }
 # ICE91 warns for files in a user-profile directory even when the package is
-# intentionally declared per-user. Keep every other MSI consistency check on.
-$lightArguments = @("-nologo", "-sice:ICE91", "-spdb", "-out", $msiPath, $wixObject)
+# intentionally declared per-user. ICE61 warns because same-version replacement
+# is deliberately enabled so development builds can upgrade without a manual
+# uninstall. Keep every other MSI consistency check on.
+$lightArguments = @(
+    "-nologo",
+    "-ext", $wix.UtilExtension,
+    "-sice:ICE91",
+    "-sice:ICE61",
+    "-spdb",
+    "-out", $msiPath,
+    $wixObject
+)
 $lightExecutable = $wix.Light
 & $lightExecutable $lightArguments
 if ($LASTEXITCODE -ne 0) {
