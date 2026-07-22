@@ -2,13 +2,13 @@
 
 Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
 
-### MSI 安装（推荐）
+## MSI 安装（推荐）
 
 1. 从右侧release发布的安装包中选择 `TokenOrb.msi` 进行安装。
 2. 启动 Token Orb。
 3. Token Orb 会在 Codex 桌面应用启动时出现，并在 Codex 关闭后退出悬浮球界面。
 
-### 界面预览
+## 界面预览
 #### 1. 悬浮球
 ![orb](./assets/orb.png)
 #### 2. 监控界面
@@ -17,6 +17,7 @@ Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
 ![right_click_menu](./assets/right_click_menu.png)
 #### 4. 自定义悬浮球外观
 ![customization](./assets/customization.png)
+
 ## 功能
 
 - **跟随 Codex 启动/关闭**
