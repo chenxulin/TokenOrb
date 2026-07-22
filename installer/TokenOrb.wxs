@@ -5,7 +5,7 @@
       Name="Token Orb"
       Language="2052"
       Codepage="936"
-      Version="1.3.0"
+      Version="1.3.1"
       Manufacturer="chenxulin"
       UpgradeCode="{E2EE802B-B7DD-4436-ADF1-A3DF49DCD07A}">
     <Package
@@ -13,7 +13,7 @@
         Compressed="yes"
         InstallScope="perUser"
         InstallPrivileges="limited"
-        Description="Token Orb v1.3 installer" />
+        Description="Token Orb v1.3.1 installer" />
 
     <MajorUpgrade
         Schedule="afterInstallInitialize"
