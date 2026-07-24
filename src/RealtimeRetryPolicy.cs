@@ -49,4 +49,15 @@ namespace CodexQuotaBall
             return TimeSpan.FromSeconds(seconds);
         }
     }
+
+    public static class LocalFallbackStatePolicy
+    {
+        public static bool Resolve(
+            bool connected,
+            bool currentlyActive,
+            bool fallbackRequested)
+        {
+            return !connected && (currentlyActive || fallbackRequested);
+        }
+    }
 }

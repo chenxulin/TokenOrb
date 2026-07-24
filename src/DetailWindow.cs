@@ -171,13 +171,6 @@ namespace CodexQuotaBall
                 FontSize = 18,
                 FontWeight = FontWeights.Bold
             });
-            heading.Children.Add(new TextBlock
-            {
-                Text = "最紧张的额度会显示在悬浮球上",
-                Foreground = UiPalette.Brush(UiPalette.Muted),
-                FontSize = 10.5,
-                Margin = new Thickness(0, 3, 0, 0)
-            });
             header.Children.Add(heading);
 
             statusText = new TextBlock

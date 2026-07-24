@@ -25,7 +25,7 @@ namespace CodexQuotaBall
         private int nextRequestId = 10;
 
         public event Action<QuotaSnapshot, bool, int> SnapshotReceived;
-        public event Action<string, bool, int> StatusChanged;
+        public event Action<string, bool, int, bool> StatusChanged;
 
         public bool IsRunning
         {
@@ -97,7 +97,7 @@ namespace CodexQuotaBall
                         exception.GetType().Name + ": " + exception.Message);
                     try { newProcess.Dispose(); } catch { }
                     process = null;
-                    RaiseStatus("实时接口不可用，使用本地快照", false);
+                    RaiseStatus("实时接口不可用，使用本地快照", false, true);
                     return;
                 }
             }
@@ -112,7 +112,7 @@ namespace CodexQuotaBall
                 AppSettings.LogRealtimeError(
                     "发送 initialize",
                     sendError.GetType().Name + ": " + sendError.Message);
-                RaiseStatus("实时接口通信失败，使用本地快照", false);
+                RaiseStatus("实时接口通信失败，使用本地快照", false, true);
             }
         }
 
@@ -517,7 +517,7 @@ namespace CodexQuotaBall
                         AppSettings.LogRealtimeError(
                             "发送 initialized",
                             sendError.GetType().Name + ": " + sendError.Message);
-                        RaiseStatus("实时接口通信失败，使用本地快照", false);
+                        RaiseStatus("实时接口通信失败，使用本地快照", false, true);
                         return;
                     }
                     RaiseStatus("实时接口已连接，正在读取额度…", false);
@@ -591,7 +591,7 @@ namespace CodexQuotaBall
                     AppSettings.LogRealtimeError("app-server RPC", errorDetails);
                     if (id.HasValue && id.Value == 0)
                     {
-                        RaiseStatus("实时接口初始化失败，使用本地快照", false);
+                        RaiseStatus("实时接口初始化失败，使用本地快照", false, true);
                     }
                 }
                 return;
@@ -694,7 +694,8 @@ namespace CodexQuotaBall
                     "实时查询连续失败 "
                         + decision.ConsecutiveFailures.ToString(CultureInfo.InvariantCulture)
                         + " 次，使用本地快照；" + delayText + " 秒后重试",
-                    false);
+                    false,
+                    true);
             }
             else
             {
@@ -820,7 +821,7 @@ namespace CodexQuotaBall
                 AppSettings.LogRealtimeError(
                     "Codex app-server 已退出",
                     "exitCode=" + exitCode);
-                RaiseStatus("实时接口已断开，使用本地快照", false);
+                RaiseStatus("实时接口已断开，使用本地快照", false, true);
             }
         }
 
@@ -896,20 +897,34 @@ namespace CodexQuotaBall
 
         private void RaiseStatus(string text, bool connected)
         {
+            RaiseStatus(text, connected, false);
+        }
+
+        private void RaiseStatus(string text, bool connected, bool useLocalFallback)
+        {
             int generation;
             lock (stateLock)
             {
                 generation = processGeneration;
             }
-            RaiseStatus(text, connected, generation);
+            RaiseStatus(text, connected, generation, useLocalFallback);
         }
 
         private void RaiseStatus(string text, bool connected, int generation)
         {
-            Action<string, bool, int> handler = StatusChanged;
+            RaiseStatus(text, connected, generation, false);
+        }
+
+        private void RaiseStatus(
+            string text,
+            bool connected,
+            int generation,
+            bool useLocalFallback)
+        {
+            Action<string, bool, int, bool> handler = StatusChanged;
             if (handler != null)
             {
-                try { handler(text, connected, generation); } catch { }
+                try { handler(text, connected, generation, useLocalFallback); } catch { }
             }
         }
 

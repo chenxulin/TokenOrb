@@ -23,6 +23,7 @@ namespace CodexQuotaBall
         private DateTimeOffset? localSnapshotNotBefore;
         private int minimumRpcGeneration;
         private bool liveConnected;
+        private bool localFallbackActive;
         private bool disposed;
 
         public event Action<QuotaSnapshot> SnapshotChanged;
@@ -43,12 +44,12 @@ namespace CodexQuotaBall
             localDebounceTimer.Tick += delegate
             {
                 localDebounceTimer.Stop();
-                RefreshLocal();
+                RefreshLocal(localFallbackActive);
             };
 
             localPollTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
-            localPollTimer.Interval = TimeSpan.FromSeconds(20);
-            localPollTimer.Tick += delegate { RefreshLocal(); };
+            localPollTimer.Interval = LocalSnapshotPolicy.RefreshPollInterval;
+            localPollTimer.Tick += delegate { RefreshLocal(localFallbackActive); };
 
             authPollTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
             authPollTimer.Interval = TimeSpan.FromSeconds(1);
@@ -87,14 +88,15 @@ namespace CodexQuotaBall
                 return;
             }
 
-            RefreshLocal();
+            localFallbackActive = true;
+            RefreshLocal(true);
             StartWatcher();
             localPollTimer.Start();
             authPollTimer.Start();
             rpcRefreshTimer.Start();
             rpcRetryTimer.Start();
             RaiseConnection("正在准备 Codex 实时接口…", false);
-            RunAppServerBackground(appServer.Start);
+            RunAppServerBackground(appServer.Restart);
         }
 
         public void ManualRefresh()
@@ -106,7 +108,7 @@ namespace CodexQuotaBall
                 return;
             }
 
-            RefreshLocal();
+            localFallbackActive = true;
             liveSnapshot = null;
             minimumRpcGeneration = appServer.CurrentGeneration + 1;
             appServer.InvalidateAuthentication();
@@ -144,6 +146,7 @@ namespace CodexQuotaBall
             liveSnapshot = null;
             currentSnapshot = null;
             liveConnected = false;
+            localFallbackActive = false;
             minimumRpcGeneration = appServer.CurrentGeneration + 1;
             appServer.InvalidateAuthentication();
             RaiseSnapshot(null);
@@ -168,7 +171,8 @@ namespace CodexQuotaBall
                     OnRpcStatus(
                         "实时接口不可用，使用本地快照",
                         false,
-                        appServer.CurrentGeneration);
+                        appServer.CurrentGeneration,
+                        true);
                 }
             });
         }
@@ -224,9 +228,14 @@ namespace CodexQuotaBall
             }));
         }
 
-        private void RefreshLocal()
+        private void RefreshLocal(bool displayLocalFallback)
         {
             if (disposed || demoMode)
+            {
+                return;
+            }
+
+            if (!displayLocalFallback)
             {
                 return;
             }
@@ -280,11 +289,16 @@ namespace CodexQuotaBall
                 liveSnapshot.IsLive = true;
                 currentSnapshot = liveSnapshot;
                 liveConnected = true;
+                localFallbackActive = false;
                 RaiseSnapshot(currentSnapshot);
             }));
         }
 
-        private void OnRpcStatus(string text, bool connected, int generation)
+        private void OnRpcStatus(
+            string text,
+            bool connected,
+            int generation,
+            bool useLocalFallback)
         {
             dispatcher.BeginInvoke(new Action(delegate
             {
@@ -297,11 +311,15 @@ namespace CodexQuotaBall
                 }
 
                 liveConnected = connected;
-                RaiseConnection(text, connected);
+                localFallbackActive = LocalFallbackStatePolicy.Resolve(
+                    connected,
+                    localFallbackActive,
+                    useLocalFallback);
                 if (!connected)
                 {
-                    RefreshLocal();
+                    RefreshLocal(localFallbackActive);
                 }
+                RaiseConnection(text, connected);
             }));
         }
 

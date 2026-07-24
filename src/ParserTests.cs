@@ -18,12 +18,15 @@ namespace CodexQuotaBall
                 TestSparseMerge();
                 TestCodexAuthStateTracking();
                 TestAccountSwitchQuotaPolicy();
+                TestLocalSnapshotPolicy();
                 TestRealtimeRetryPolicy();
+                TestLocalFallbackStatePolicy();
                 TestWindowNames();
                 TestCodexDesktopProcessMatching();
                 TestFollowCodexStartupDefaults();
                 TestWatcherTrayBehavior();
                 TestAppIdentity();
+                TestQuotaText();
                 TestWaveColors();
                 TestWaveVisibility();
                 TestDepletedBallBorder();
@@ -203,6 +206,24 @@ namespace CodexQuotaBall
             Assert(!afterReset.UseLocalFallback, "Reset should clear local fallback state");
         }
 
+        private static void TestLocalSnapshotPolicy()
+        {
+            AssertNear(60.0, LocalSnapshotPolicy.RefreshPollInterval.TotalSeconds,
+                "Local snapshot fallback poll interval");
+        }
+
+        private static void TestLocalFallbackStatePolicy()
+        {
+            Assert(!LocalFallbackStatePolicy.Resolve(false, false, false),
+                "Connecting without a failure should not display a local snapshot");
+            Assert(LocalFallbackStatePolicy.Resolve(false, false, true),
+                "An explicit realtime failure should enable the local fallback");
+            Assert(LocalFallbackStatePolicy.Resolve(false, true, false),
+                "A reconnect attempt should keep an active local fallback visible");
+            Assert(!LocalFallbackStatePolicy.Resolve(true, true, true),
+                "A realtime recovery should clear the local fallback state");
+        }
+
         private static void TestWindowNames()
         {
             Assert(QuotaSnapshot.FormatWindowName(new QuotaWindowInfo { WindowMinutes = 300 }) == "5小时", "Five-hour label");
@@ -267,8 +288,8 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.3.1", "Display version should be v1.3.1");
-            Assert(AppIdentity.ProtocolVersion == "1.3.1", "Protocol version should be semantic v1.3.1");
+            Assert(AppIdentity.DisplayVersion == "v1.3.2", "Display version should be v1.3.2");
+            Assert(AppIdentity.ProtocolVersion == "1.3.2", "Protocol version should be semantic v1.3.2");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 
@@ -330,6 +351,20 @@ namespace CodexQuotaBall
                 "Orange progress ring should match the wave above 10 percent");
             Assert(UiPalette.QuotaColor(10.0) == UiPalette.WaveColor(10.0),
                 "Red progress ring should match the wave at 10 percent");
+        }
+
+        private static void TestQuotaText()
+        {
+            Assert(QuotaBallVisual.FormatQuotaText(null) == String.Empty,
+                "Missing quota should not render placeholder text");
+            AssertNear(17.66, QuotaBallVisual.CalculateVisibleWaveHeight(
+                QuotaBallVisual.DefaultDiameter,
+                17.66,
+                QuotaBallVisual.WaitingWaveRemainingPercent),
+                "Missing quota should fill half of the orb with the waiting wave");
+            Assert(QuotaBallVisual.FormatQuotaText(
+                new QuotaWindowInfo { UsedPercent = 31.0 }) == "69%",
+                "Available quota should render its rounded remaining percentage");
         }
 
         private static void TestWaveVisibility()

@@ -219,6 +219,11 @@ namespace CodexQuotaBall
         }
     }
 
+    public static class LocalSnapshotPolicy
+    {
+        public static readonly TimeSpan RefreshPollInterval = TimeSpan.FromSeconds(60.0);
+    }
+
     public static class QuotaJsonParser
     {
         private static JavaScriptSerializer CreateSerializer()

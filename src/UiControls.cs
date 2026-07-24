@@ -123,6 +123,7 @@ namespace CodexQuotaBall
         public const double MaximumDiameter = 160.0;
         internal const double OuterRingBreathingCycleSeconds = 3.0;
         internal const double BodyLightCycleSeconds = 5.6;
+        internal const double WaitingWaveRemainingPercent = 50.0;
         private QuotaSnapshot snapshot;
         private bool connected;
         private string statusText = "正在连接";
@@ -198,6 +199,9 @@ namespace CodexQuotaBall
             double outerRadius = Math.Max(6.0, size / 2.0 - Math.Max(2.2, size * 0.092));
             QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.MostRestrictiveWindow;
             double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
+            double waveRemaining = limitingWindow == null
+                ? WaitingWaveRemainingPercent
+                : remaining;
             bool depleted = limitingWindow != null && remaining <= 0.0;
             Point bodyLightOffset = CalculateBodyLightOffset(bodyLightPhase);
             double bodyLightStrength = CalculateBodyLightStrength(bodyLightPhase);
@@ -348,7 +352,7 @@ namespace CodexQuotaBall
             double ringWidth = Math.Max(1.8, Math.Min(8.0, size * 0.066));
             double ringRadius = Math.Max(4.0, outerRadius - ringWidth * 1.04);
 
-            if (limitingWindow != null && remaining > 0.0)
+            if (limitingWindow == null || remaining > 0.0)
             {
                 double waveInset = Math.Max(0.65, size * 0.012);
                 double waveRadius = Math.Max(2.2, ringRadius - ringWidth / 2.0 - waveInset);
@@ -356,8 +360,8 @@ namespace CodexQuotaBall
                     drawingContext,
                     center,
                     waveRadius,
-                    remaining,
-                    UiPalette.WaveColor(remaining),
+                    waveRemaining,
+                    limitingWindow == null ? UiPalette.Blue : UiPalette.WaveColor(remaining),
                     size);
             }
 
@@ -384,23 +388,24 @@ namespace CodexQuotaBall
 
             drawingContext.Pop();
 
-            string numberText = limitingWindow == null
-                ? "--"
-                : Math.Round(remaining).ToString("0", CultureInfo.InvariantCulture) + "%";
+            string numberText = FormatQuotaText(limitingWindow);
             double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             double fontSize = numberText.Length >= 4 ? size * 0.242 : size * 0.274;
             fontSize = Math.Max(6.8, Math.Min(37.0, fontSize));
 
-            DrawCenteredText(
-                drawingContext,
-                numberText,
-                fontSize,
-                FontWeights.Bold,
-                UiPalette.Brush(ResolveQuotaTextColor(
-                    accentColor,
-                    limitingWindow == null ? (double?)null : remaining)),
-                center,
-                pixelsPerDip);
+            if (!String.IsNullOrEmpty(numberText))
+            {
+                DrawCenteredText(
+                    drawingContext,
+                    numberText,
+                    fontSize,
+                    FontWeights.Bold,
+                    UiPalette.Brush(ResolveQuotaTextColor(
+                        accentColor,
+                        limitingWindow == null ? (double?)null : remaining)),
+                    center,
+                    pixelsPerDip);
+            }
 
             Color statusColor = connected ? UiPalette.Green : UiPalette.Amber;
             Point statusCenter = new Point(center.X + outerRadius * 0.70, center.Y - outerRadius * 0.70);
@@ -704,6 +709,14 @@ namespace CodexQuotaBall
             return new Point(
                 center.X + radius * Math.Cos(radians),
                 center.Y + radius * Math.Sin(radians));
+        }
+
+        internal static string FormatQuotaText(QuotaWindowInfo limitingWindow)
+        {
+            return limitingWindow == null
+                ? String.Empty
+                : Math.Round(limitingWindow.RemainingPercent)
+                    .ToString("0", CultureInfo.InvariantCulture) + "%";
         }
 
         private static void DrawCenteredText(
