@@ -69,6 +69,18 @@ public enum QuotaParser {
             if let direct = dictionary(any(in: object, keys: ["rateLimits", "rate_limits"])) {
                 return direct
             }
+            if let byID = dictionary(
+                any(in: object, keys: ["rateLimitsByLimitId", "rate_limits_by_limit_id"])
+            ) {
+                if let codex = dictionary(byID["codex"]) {
+                    return codex
+                }
+                for candidate in byID.values {
+                    if let limits = dictionary(candidate) {
+                        return limits
+                    }
+                }
+            }
             if object["primary"] != nil || object["secondary"] != nil {
                 return object
             }

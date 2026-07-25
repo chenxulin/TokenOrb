@@ -160,6 +160,10 @@ public struct QuotaSnapshot: Equatable, Sendable {
 }
 
 public enum QuotaFormatting {
+    public static func roundedPercent(_ value: Double) -> Int {
+        Int(value.rounded(.toNearestOrEven))
+    }
+
     public static func windowName(_ window: QuotaWindow?) -> String {
         guard let minutes = window?.windowMinutes else { return "额度" }
         switch minutes {
@@ -179,21 +183,22 @@ public enum QuotaFormatting {
     }
 
     public static func resetText(_ window: QuotaWindow?, now: Date = Date()) -> String {
-        guard let reset = window?.resetsAt else { return "刷新时间待补充" }
-        let remaining = max(0, reset.timeIntervalSince(now))
+        guard let reset = window?.resetsAt else { return "重置时间未知" }
+        let remaining = reset.timeIntervalSince(now)
         let days = Int(remaining) / 86_400
         let hours = (Int(remaining) % 86_400) / 3_600
         let minutes = (Int(remaining) % 3_600) / 60
+        let seconds = Int(remaining) % 60
 
         let relative: String
-        if days > 0 {
+        if remaining <= 0 {
+            relative = "等待 Codex 刷新"
+        } else if remaining >= 86_400 {
             relative = "\(days)天 \(hours)小时后"
-        } else if hours > 0 {
-            relative = "\(hours)小时 \(minutes)分钟后"
-        } else if minutes > 0 {
-            relative = "\(minutes)分钟后"
+        } else if remaining >= 3_600 {
+            relative = "\(hours)小时 \(minutes)分后"
         } else {
-            relative = "即将刷新"
+            relative = "\(max(0, minutes))分 \(max(0, seconds))秒后"
         }
 
         let formatter = DateFormatter()
@@ -203,33 +208,42 @@ public enum QuotaFormatting {
     }
 
     public static func planName(_ plan: String?) -> String {
-        guard let plan, !plan.isEmpty else { return "待补充" }
-        switch plan.lowercased() {
+        guard let plan else { return "未知套餐" }
+        let normalized = plan.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return "未知套餐" }
+        switch normalized.lowercased() {
         case "plus":
             return "ChatGPT Plus"
         case "pro":
             return "ChatGPT Pro"
         case "team":
             return "ChatGPT Team"
+        case "business":
+            return "ChatGPT Business"
         case "enterprise":
             return "ChatGPT Enterprise"
+        case "edu":
+            return "ChatGPT Edu"
         default:
-            return plan
+            return normalized
         }
     }
 
     public static func credits(_ value: QuotaCredits?) -> String {
-        guard let value else { return "待补充" }
+        guard let value, value.hasCredits != false else { return "未启用" }
         if value.unlimited == true {
             return "无限"
         }
-        guard let balance = value.balance, let number = Decimal(string: balance) else {
-            return value.hasCredits == false ? "无" : "待补充"
+        guard let balance = value.balance, !balance.isEmpty else {
+            return "可用"
+        }
+        guard let number = Decimal(string: balance) else {
+            return balance
         }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 0
+        formatter.minimumFractionDigits = 2
         return formatter.string(from: number as NSDecimalNumber) ?? balance
     }
 }

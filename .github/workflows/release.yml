@@ -24,7 +24,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: TokenOrb-Windows
-          path: dist/TokenOrb.*
+          path: |
+            dist/TokenOrb-Windows.exe
+            dist/TokenOrb-Windows.msi
+            dist/TokenOrb-Windows-source.zip
+            dist/TokenOrb-Windows.sha256
           if-no-files-found: error
 
   build-macos:
@@ -44,7 +48,18 @@ jobs:
           test "$(lipo -archs 'macos/dist/Token Orb.app/Contents/MacOS/TokenOrb')" = "x86_64 arm64" || \
             test "$(lipo -archs 'macos/dist/Token Orb.app/Contents/MacOS/TokenOrb')" = "arm64 x86_64"
           codesign --verify --deep --strict "macos/dist/Token Orb.app"
-          unzip -t macos/dist/TokenOrb-macOS.zip
+          hdiutil verify macos/dist/TokenOrb-macOS.dmg
+          unzip -t macos/dist/TokenOrb-macOS-source.zip
+          mount_dir="$RUNNER_TEMP/token-orb-dmg"
+          mkdir -p "$mount_dir"
+          hdiutil attach macos/dist/TokenOrb-macOS.dmg -readonly -nobrowse -mountpoint "$mount_dir"
+          trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true' EXIT
+          test -d "$mount_dir/Token Orb.app"
+          codesign --verify --deep --strict "$mount_dir/Token Orb.app"
+          test "$(lipo -archs "$mount_dir/Token Orb.app/Contents/MacOS/TokenOrb")" = "x86_64 arm64" || \
+            test "$(lipo -archs "$mount_dir/Token Orb.app/Contents/MacOS/TokenOrb")" = "arm64 x86_64"
+          hdiutil detach "$mount_dir"
+          trap - EXIT
           cd macos/dist
           shasum -a 256 -c TokenOrb-macOS.sha256
 
@@ -53,7 +68,8 @@ jobs:
         with:
           name: TokenOrb-macOS
           path: |
-            macos/dist/TokenOrb-macOS.zip
+            macos/dist/TokenOrb-macOS.dmg
+            macos/dist/TokenOrb-macOS-source.zip
             macos/dist/TokenOrb-macOS.sha256
           if-no-files-found: error
 
@@ -66,6 +82,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+
       - name: Download verified build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -76,8 +95,25 @@ jobs:
       - name: Verify release checksums
         working-directory: release-assets
         run: |
-          sha256sum -c TokenOrb.sha256
+          sha256sum -c TokenOrb-Windows.sha256
           sha256sum -c TokenOrb-macOS.sha256
+
+      - name: Enforce release asset allowlist
+        working-directory: release-assets
+        run: |
+          assets=(
+            TokenOrb-Windows.exe
+            TokenOrb-Windows.msi
+            TokenOrb-macOS.dmg
+            TokenOrb-Windows-source.zip
+            TokenOrb-macOS-source.zip
+            TokenOrb-Windows.sha256
+            TokenOrb-macOS.sha256
+          )
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = "${#assets[@]}"
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+          done
 
       - name: Remove existing GitHub Release for this tag
         env:
@@ -94,14 +130,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "release-assets/TokenOrb.exe" \
-            "release-assets/TokenOrb.msi" \
-            "release-assets/TokenOrb.zip" \
-            "release-assets/TokenOrb.source.zip" \
-            "release-assets/TokenOrb.md" \
-            "release-assets/TokenOrb.sha256" \
-            "release-assets/TokenOrb-macOS.zip" \
+            "release-assets/TokenOrb-Windows.exe" \
+            "release-assets/TokenOrb-Windows.msi" \
+            "release-assets/TokenOrb-macOS.dmg" \
+            "release-assets/TokenOrb-Windows-source.zip" \
+            "release-assets/TokenOrb-macOS-source.zip" \
+            "release-assets/TokenOrb-Windows.sha256" \
             "release-assets/TokenOrb-macOS.sha256" \
             --verify-tag \
-            --generate-notes \
+            --notes-file RELEASE_NOTES.md \
             --title "Token Orb $GITHUB_REF_NAME"

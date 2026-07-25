@@ -86,6 +86,7 @@ namespace CodexQuotaBall
 
             Loaded += OnLoaded;
             Closed += OnClosed;
+            Deactivated += OnDeactivated;
             MouseLeftButtonDown += OnMouseLeftButtonDown;
         }
 
@@ -141,6 +142,15 @@ namespace CodexQuotaBall
                 && !Application.Current.Dispatcher.HasShutdownStarted)
             {
                 Application.Current.Shutdown();
+            }
+        }
+
+        private void OnDeactivated(object sender, EventArgs args)
+        {
+            ContextMenu menu = ball.ContextMenu;
+            if (menu != null && menu.IsOpen)
+            {
+                menu.IsOpen = false;
             }
         }
 
@@ -207,6 +217,7 @@ namespace CodexQuotaBall
                 FontSize = 11.5,
                 Padding = new Thickness(4),
                 MinWidth = 164,
+                StaysOpen = false,
                 OverridesDefaultStyle = true,
                 Template = CreateContextMenuTemplate()
             };

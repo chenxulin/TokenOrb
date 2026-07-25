@@ -5,8 +5,8 @@ Swift、AppKit 和 Swift Package Manager，不依赖第三方库。
 
 ## 安装
 
-从 GitHub Release 下载 `TokenOrb-macOS.zip`，解压后将 `Token Orb.app` 拖入
-“应用程序”。发布包同时支持 Apple Silicon 与 Intel。
+从 GitHub Release 下载并打开 `TokenOrb-macOS.dmg`，将 `Token Orb.app` 拖入
+“Applications”。发布包同时支持 Apple Silicon 与 Intel。
 
 当前安装包使用 ad-hoc 签名、尚未公证。若 macOS 提示无法验证开发者，请在
 Finder 中按住 Control 点击应用并选择“打开”。
@@ -14,13 +14,15 @@ Finder 中按住 Control 点击应用并选择“打开”。
 ## 功能
 
 - 菜单栏状态与桌面悬浮球
+- 与 Windows 一致的双层水波、外圈呼吸、球体脉冲与流动高光动画
 - 实时读取 Codex 5 小时和 7 天额度
-- 点击悬浮球查看详细额度
+- 点击悬浮球切换详细额度，失焦自动关闭，重置倒计时按秒更新
 - 右键悬浮球打开操作菜单
 - 拖动悬浮球并保存位置
-- 自定义悬浮球大小和颜色
-- 检测 Codex 账号变化后自动重连
-- 实时接口不可用时读取本地会话快照
+- 自定义 24–160 px 悬浮球大小和颜色，保存或取消后再应用
+- 检测 Codex 账号身份变化后自动重连，同账号令牌轮换不会误刷新
+- 实时查询按 2/4/8/16/30 秒退避重试，连续失败后读取本地会话快照
+- 监听本地会话变化，并保留 60 秒兜底轮询
 - 可跟随 Codex 桌面应用启动和关闭
 
 ## 构建
@@ -35,7 +37,8 @@ bash macos/build_macos.sh
 构建结果：
 
 - `macos/dist/Token Orb.app`
-- `macos/dist/TokenOrb-macOS.zip`
+- `macos/dist/TokenOrb-macOS.dmg`
+- `macos/dist/TokenOrb-macOS-source.zip`
 - `macos/dist/TokenOrb-macOS.sha256`
 
 运行：
@@ -63,6 +66,12 @@ swift run --package-path macos TokenOrbCoreChecks
 
 ```bash
 CODEX_QUOTA_CODEX_PATH="/path/to/codex" open "macos/dist/Token Orb.app"
+```
+
+若 Codex 使用了自定义数据目录，Token Orb 与 Windows 版本一样支持 `CODEX_HOME`：
+
+```bash
+CODEX_HOME="/path/to/codex-home" open "macos/dist/Token Orb.app"
 ```
 
 Token Orb 只在本机启动 `codex app-server`。应用不会上传或保存 Codex 登录凭据。
