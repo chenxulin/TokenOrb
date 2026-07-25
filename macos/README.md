@@ -3,6 +3,14 @@
 这是 Token Orb 的原生 macOS 客户端。Windows 版本保持原样，macOS 版本使用
 Swift、AppKit 和 Swift Package Manager，不依赖第三方库。
 
+## 安装
+
+从 GitHub Release 下载 `TokenOrb-macOS.zip`，解压后将 `Token Orb.app` 拖入
+“应用程序”。发布包同时支持 Apple Silicon 与 Intel。
+
+当前安装包使用 ad-hoc 签名、尚未公证。若 macOS 提示无法验证开发者，请在
+Finder 中按住 Control 点击应用并选择“打开”。
+
 ## 功能
 
 - 菜单栏状态与桌面悬浮球
@@ -28,6 +36,7 @@ bash macos/build_macos.sh
 
 - `macos/dist/Token Orb.app`
 - `macos/dist/TokenOrb-macOS.zip`
+- `macos/dist/TokenOrb-macOS.sha256`
 
 运行：
 

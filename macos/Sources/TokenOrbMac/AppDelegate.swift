@@ -311,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "Token Orb v1.3.2"
+        alert.messageText = "Token Orb v1.4.0"
         alert.informativeText = """
         macOS 原生版本
 

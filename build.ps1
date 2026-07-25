@@ -412,6 +412,7 @@ $sourcePackagePath = Join-Path $OutputDirectory "TokenOrb.source.zip"
 $sourceItems = @(
     (Join-Path $projectRoot "src"),
     (Join-Path $projectRoot "installer"),
+    (Join-Path $projectRoot "macos"),
     (Join-Path $projectRoot ".github"),
     (Join-Path $projectRoot "tools"),
     $readmeSource,

@@ -108,7 +108,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
                     "clientInfo": [
                         "name": "token_orb_macos",
                         "title": "Token Orb",
-                        "version": "1.3.2",
+                        "version": "1.4.0",
                     ],
                 ],
             ])
