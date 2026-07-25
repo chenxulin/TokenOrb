@@ -1,0 +1,235 @@
+import Foundation
+
+public struct QuotaWindow: Equatable, Sendable {
+    public var usedPercent: Double?
+    public var windowMinutes: Int?
+    public var resetsAt: Date?
+
+    public init(
+        usedPercent: Double? = nil,
+        windowMinutes: Int? = nil,
+        resetsAt: Date? = nil
+    ) {
+        self.usedPercent = usedPercent
+        self.windowMinutes = windowMinutes
+        self.resetsAt = resetsAt
+    }
+
+    public var isMeaningful: Bool {
+        usedPercent != nil || windowMinutes != nil || resetsAt != nil
+    }
+
+    public var remainingPercent: Double {
+        min(100, max(0, 100 - (usedPercent ?? 0)))
+    }
+
+    public func merged(with update: QuotaWindow?) -> QuotaWindow {
+        guard let update else { return self }
+        return QuotaWindow(
+            usedPercent: update.usedPercent ?? usedPercent,
+            windowMinutes: update.windowMinutes ?? windowMinutes,
+            resetsAt: update.resetsAt ?? resetsAt
+        )
+    }
+}
+
+public struct QuotaCredits: Equatable, Sendable {
+    public var hasCredits: Bool?
+    public var unlimited: Bool?
+    public var balance: String?
+
+    public init(
+        hasCredits: Bool? = nil,
+        unlimited: Bool? = nil,
+        balance: String? = nil
+    ) {
+        self.hasCredits = hasCredits
+        self.unlimited = unlimited
+        self.balance = balance
+    }
+
+    public func merged(with update: QuotaCredits?) -> QuotaCredits {
+        guard let update else { return self }
+        return QuotaCredits(
+            hasCredits: update.hasCredits ?? hasCredits,
+            unlimited: update.unlimited ?? unlimited,
+            balance: update.balance?.isEmpty == false ? update.balance : balance
+        )
+    }
+}
+
+public struct QuotaSnapshot: Equatable, Sendable {
+    public var limitID: String?
+    public var limitName: String?
+    public var primary: QuotaWindow?
+    public var secondary: QuotaWindow?
+    public var credits: QuotaCredits?
+    public var planType: String?
+    public var rateLimitReachedType: String?
+    public var spendControlReached: Bool?
+    public var capturedAt: Date
+    public var source: String
+    public var isLive: Bool
+
+    public init(
+        limitID: String? = nil,
+        limitName: String? = nil,
+        primary: QuotaWindow? = nil,
+        secondary: QuotaWindow? = nil,
+        credits: QuotaCredits? = nil,
+        planType: String? = nil,
+        rateLimitReachedType: String? = nil,
+        spendControlReached: Bool? = nil,
+        capturedAt: Date = Date(),
+        source: String,
+        isLive: Bool
+    ) {
+        self.limitID = limitID
+        self.limitName = limitName
+        self.primary = primary
+        self.secondary = secondary
+        self.credits = credits
+        self.planType = planType
+        self.rateLimitReachedType = rateLimitReachedType
+        self.spendControlReached = spendControlReached
+        self.capturedAt = capturedAt
+        self.source = source
+        self.isLive = isLive
+    }
+
+    public var hasQuotaData: Bool {
+        primary?.isMeaningful == true
+            || secondary?.isMeaningful == true
+            || credits != nil
+    }
+
+    public var mostRestrictiveWindow: QuotaWindow? {
+        [primary, secondary]
+            .compactMap { $0 }
+            .filter { $0.usedPercent != nil }
+            .min {
+                if $0.remainingPercent == $1.remainingPercent {
+                    return ($0.windowMinutes ?? .max) < ($1.windowMinutes ?? .max)
+                }
+                return $0.remainingPercent < $1.remainingPercent
+            }
+    }
+
+    public func merged(with update: QuotaSnapshot) -> QuotaSnapshot {
+        QuotaSnapshot(
+            limitID: update.limitID?.isEmpty == false ? update.limitID : limitID,
+            limitName: update.limitName?.isEmpty == false ? update.limitName : limitName,
+            primary: primary.map { $0.merged(with: update.primary) } ?? update.primary,
+            secondary: secondary.map { $0.merged(with: update.secondary) } ?? update.secondary,
+            credits: credits.map { $0.merged(with: update.credits) } ?? update.credits,
+            planType: update.planType?.isEmpty == false ? update.planType : planType,
+            rateLimitReachedType: update.rateLimitReachedType?.isEmpty == false
+                ? update.rateLimitReachedType
+                : rateLimitReachedType,
+            spendControlReached: update.spendControlReached ?? spendControlReached,
+            capturedAt: update.capturedAt,
+            source: update.source.isEmpty ? source : update.source,
+            isLive: isLive || update.isLive
+        )
+    }
+
+    public static func demo(now: Date = Date()) -> QuotaSnapshot {
+        QuotaSnapshot(
+            limitID: "codex",
+            primary: QuotaWindow(
+                usedPercent: 31,
+                windowMinutes: 300,
+                resetsAt: now.addingTimeInterval(2 * 3600 + 27 * 60)
+            ),
+            secondary: QuotaWindow(
+                usedPercent: 54,
+                windowMinutes: 10_080,
+                resetsAt: now.addingTimeInterval(4 * 86_400 + 7 * 3600)
+            ),
+            credits: QuotaCredits(
+                hasCredits: true,
+                unlimited: false,
+                balance: "2226.6674375000"
+            ),
+            planType: "plus",
+            capturedAt: now,
+            source: "演示数据",
+            isLive: true
+        )
+    }
+}
+
+public enum QuotaFormatting {
+    public static func windowName(_ window: QuotaWindow?) -> String {
+        guard let minutes = window?.windowMinutes else { return "额度" }
+        switch minutes {
+        case 300:
+            return "5小时"
+        case 10_080:
+            return "7天"
+        default:
+            if minutes > 0, minutes.isMultiple(of: 1_440) {
+                return "\(minutes / 1_440)天"
+            }
+            if minutes > 0, minutes.isMultiple(of: 60) {
+                return "\(minutes / 60)小时"
+            }
+            return "\(minutes)分钟"
+        }
+    }
+
+    public static func resetText(_ window: QuotaWindow?, now: Date = Date()) -> String {
+        guard let reset = window?.resetsAt else { return "刷新时间待补充" }
+        let remaining = max(0, reset.timeIntervalSince(now))
+        let days = Int(remaining) / 86_400
+        let hours = (Int(remaining) % 86_400) / 3_600
+        let minutes = (Int(remaining) % 3_600) / 60
+
+        let relative: String
+        if days > 0 {
+            relative = "\(days)天 \(hours)小时后"
+        } else if hours > 0 {
+            relative = "\(hours)小时 \(minutes)分钟后"
+        } else if minutes > 0 {
+            relative = "\(minutes)分钟后"
+        } else {
+            relative = "即将刷新"
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return "\(relative) · \(formatter.string(from: reset))"
+    }
+
+    public static func planName(_ plan: String?) -> String {
+        guard let plan, !plan.isEmpty else { return "待补充" }
+        switch plan.lowercased() {
+        case "plus":
+            return "ChatGPT Plus"
+        case "pro":
+            return "ChatGPT Pro"
+        case "team":
+            return "ChatGPT Team"
+        case "enterprise":
+            return "ChatGPT Enterprise"
+        default:
+            return plan
+        }
+    }
+
+    public static func credits(_ value: QuotaCredits?) -> String {
+        guard let value else { return "待补充" }
+        if value.unlimited == true {
+            return "无限"
+        }
+        guard let balance = value.balance, let number = Decimal(string: balance) else {
+            return value.hasCredits == false ? "无" : "待补充"
+        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter.string(from: number as NSDecimalNumber) ?? balance
+    }
+}
