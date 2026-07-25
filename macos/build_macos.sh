@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
 dist_dir="$script_dir/dist"
 app_dir="$dist_dir/Token Orb.app"
 contents_dir="$app_dir/Contents"
@@ -58,8 +59,8 @@ plutil -create xml1 "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleInfoDictionaryVersion string 6.0" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string Token Orb" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.4.0" "$plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.4.0" "$plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.0" "$plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.0" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$plist_path"
@@ -69,12 +70,39 @@ if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "$app_dir"
 fi
 
-ditto -c -k --keepParent "$app_dir" "$dist_dir/TokenOrb-macOS.zip"
+disk_image_stage="$dist_dir/disk-image"
+mkdir -p "$disk_image_stage"
+ditto "$app_dir" "$disk_image_stage/Token Orb.app"
+ln -s /Applications "$disk_image_stage/Applications"
+hdiutil create \
+  -quiet \
+  -volname "Token Orb" \
+  -srcfolder "$disk_image_stage" \
+  -ov \
+  -format UDZO \
+  "$dist_dir/TokenOrb-macOS.dmg"
+rm -rf "$disk_image_stage"
+
+source_stage="$dist_dir/TokenOrb-macOS-source"
+mkdir -p "$source_stage/macos"
+ditto "$script_dir/Sources" "$source_stage/macos/Sources"
+cp "$script_dir/Package.swift" "$source_stage/macos/Package.swift"
+cp "$script_dir/build_macos.sh" "$source_stage/macos/build_macos.sh"
+cp "$script_dir/README.md" "$source_stage/macos/README.md"
+cp "$repo_root/README.md" "$source_stage/README.md"
+cp "$repo_root/LICENSE" "$source_stage/LICENSE"
+ditto -c -k --keepParent "$source_stage" "$dist_dir/TokenOrb-macOS-source.zip"
+rm -rf "$source_stage"
+
 (
   cd "$dist_dir"
-  shasum -a 256 "TokenOrb-macOS.zip" > "TokenOrb-macOS.sha256"
+  shasum -a 256 \
+    "TokenOrb-macOS.dmg" \
+    "TokenOrb-macOS-source.zip" \
+    > "TokenOrb-macOS.sha256"
 )
 
 printf 'Built %s\n' "$app_dir"
-printf 'Archive %s\n' "$dist_dir/TokenOrb-macOS.zip"
+printf 'Disk image %s\n' "$dist_dir/TokenOrb-macOS.dmg"
+printf 'Source %s\n' "$dist_dir/TokenOrb-macOS-source.zip"
 printf 'Checksum %s\n' "$dist_dir/TokenOrb-macOS.sha256"

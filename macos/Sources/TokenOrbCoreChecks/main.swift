@@ -157,8 +157,8 @@ func checkFormatting() {
 
 func checkAppIdentity() {
     expect(AppIdentity.productName == "Token Orb", "product name")
-    expect(AppIdentity.displayVersion == "v1.4.0", "display version")
-    expect(AppIdentity.protocolVersion == "1.4.0", "protocol version")
+    expect(AppIdentity.displayVersion == "v1.5.0", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.0", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 

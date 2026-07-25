@@ -5,8 +5,8 @@ Swift、AppKit 和 Swift Package Manager，不依赖第三方库。
 
 ## 安装
 
-从 GitHub Release 下载 `TokenOrb-macOS.zip`，解压后将 `Token Orb.app` 拖入
-“应用程序”。发布包同时支持 Apple Silicon 与 Intel。
+从 GitHub Release 下载并打开 `TokenOrb-macOS.dmg`，将 `Token Orb.app` 拖入
+“Applications”。发布包同时支持 Apple Silicon 与 Intel。
 
 当前安装包使用 ad-hoc 签名、尚未公证。若 macOS 提示无法验证开发者，请在
 Finder 中按住 Control 点击应用并选择“打开”。
@@ -37,7 +37,8 @@ bash macos/build_macos.sh
 构建结果：
 
 - `macos/dist/Token Orb.app`
-- `macos/dist/TokenOrb-macOS.zip`
+- `macos/dist/TokenOrb-macOS.dmg`
+- `macos/dist/TokenOrb-macOS-source.zip`
 - `macos/dist/TokenOrb-macOS.sha256`
 
 运行：

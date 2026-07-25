@@ -4,8 +4,8 @@ using System.Reflection;
 [assembly: AssemblyProduct("Token Orb")]
 [assembly: AssemblyCompany("chenxulin")]
 [assembly: AssemblyCopyright("Copyright © chenxulin")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace CodexQuotaBall
 {
@@ -13,8 +13,8 @@ namespace CodexQuotaBall
     {
         public const string ProductName = "Token Orb";
         public const string ExecutableFileName = "TokenOrb.exe";
-        public const string DisplayVersion = "v1.4.0";
-        public const string ProtocolVersion = "1.4.0";
+        public const string DisplayVersion = "v1.5.0";
+        public const string ProtocolVersion = "1.5.0";
         public const string Publisher = "chenxulin";
         public const string ReleaseDateText = "发布于 2026年7月25日";
     }
