@@ -15,31 +15,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var orbController = OrbPanelController(settings: settings)
     private lazy var detailController = DetailWindowController()
     private lazy var appearanceController = AppearanceWindowController(settings: settings)
+    private lazy var aboutController = AboutWindowController()
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var processTimer: Timer?
     private var refreshTimer: Timer?
     private var authTimer: Timer?
-    private var retryTimer: Timer?
+    private var processRetryTimer: Timer?
+    private var localWatchTimer: Timer?
+    private var localPollTimer: Timer?
+    private var localDebounceTimer: Timer?
+    private var presentationTimer: Timer?
+
     private var snapshot: QuotaSnapshot?
     private var liveSnapshot: QuotaSnapshot?
     private var localSnapshotNotBefore: Date?
+    private var localFallbackActive = false
     private var statusText = "正在准备…"
     private var connected = false
     private var clientActive = false
+    private var manuallyHidden = false
+    private var serviceGeneration = 0
+    private var minimumClientGeneration = 0
+    private var lastLocalFingerprint: LocalSessionsFingerprint?
+    private var localFingerprintCheckInFlight = false
     private let demoMode = CommandLine.arguments.contains("--demo")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureControllers()
+        startTimers()
 
         if demoMode {
             snapshot = .demo()
             statusText = "演示数据"
             connected = true
-            settings.orbVisible = true
             updatePresentation()
             return
         }
@@ -47,14 +59,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = processMonitor.poll()
         settings.updateLoginItem(enabled: settings.followCodex)
         evaluateRuntimeState()
-        startTimers()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        processTimer?.invalidate()
-        refreshTimer?.invalidate()
-        authTimer?.invalidate()
-        retryTimer?.invalidate()
+        [
+            processTimer,
+            refreshTimer,
+            authTimer,
+            processRetryTimer,
+            localWatchTimer,
+            localPollTimer,
+            localDebounceTimer,
+            presentationTimer,
+        ].forEach { $0?.invalidate() }
         client.stopAndWait()
     }
 
@@ -91,107 +108,241 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.updatePresentation()
         }
 
-        client.onSnapshot = { [weak self] update, sparse in
-            guard let self else { return }
+        client.onSnapshot = { [weak self] update, sparse, generation in
+            guard
+                let self,
+                self.clientActive,
+                AccountSwitchQuotaPolicy.canUseClientGeneration(
+                    generation,
+                    minimum: self.minimumClientGeneration
+                )
+            else { return }
             self.liveSnapshot = sparse && self.liveSnapshot != nil
                 ? self.liveSnapshot?.merged(with: update)
                 : update
             self.snapshot = self.liveSnapshot
             self.localSnapshotNotBefore = nil
+            self.localFallbackActive = false
             self.connected = true
             self.statusText = "实时同步中"
-            self.retryTimer?.invalidate()
             self.updatePresentation()
         }
-        client.onStatus = { [weak self] text, connected in
-            guard let self else { return }
+        client.onStatus = { [weak self] text, connected, generation, useLocalFallback in
+            guard
+                let self,
+                self.clientActive,
+                AccountSwitchQuotaPolicy.canUseClientGeneration(
+                    generation,
+                    minimum: self.minimumClientGeneration
+                )
+            else { return }
             self.statusText = text
             self.connected = connected
-            if !connected {
+            self.localFallbackActive = LocalFallbackStatePolicy.resolve(
+                connected: connected,
+                currentlyActive: self.localFallbackActive,
+                fallbackRequested: useLocalFallback
+            )
+            if !connected, self.localFallbackActive {
                 self.loadLocalFallback()
-                self.scheduleRetry()
             }
             self.updatePresentation()
+        }
+        client.onDiagnostic = { operation, details in
+            AppLogger.shared.realtime(operation: operation, details: details)
         }
     }
 
     private func startTimers() {
-        processTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        presentationTimer = commonTimer(interval: 1) { [weak self] in
+            self?.refreshTimePresentation()
+        }
+        guard !demoMode else { return }
+
+        processTimer = commonTimer(interval: 2) { [weak self] in
             guard let self else { return }
-            if self.processMonitor.poll() {
-                self.evaluateRuntimeState()
+            let wasRunning = self.processMonitor.isRunning
+            guard self.processMonitor.poll() else { return }
+            if OrbRuntimePolicy.shouldResetManualHide(
+                followCodex: self.settings.followCodex,
+                wasCodexRunning: wasRunning,
+                codexRunning: self.processMonitor.isRunning
+            ) {
+                // Manual hiding is scoped to one Codex session on Windows.
+                self.manuallyHidden = false
             }
+            self.evaluateRuntimeState()
         }
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.client.refresh()
+        refreshTimer = commonTimer(interval: 30) { [weak self] in
+            guard let self, self.clientActive else { return }
+            self.client.refresh()
         }
-        authTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, self.authTracker.pollForChange() else { return }
-            self.snapshot = nil
-            self.liveSnapshot = nil
-            self.localSnapshotNotBefore = Date()
-            self.connected = false
-            self.statusText = "检测到 Codex 账号变化，正在刷新额度…"
-            self.updatePresentation()
-            if self.clientActive {
+        authTimer = commonTimer(interval: 1) { [weak self] in
+            self?.pollAuthState()
+        }
+        processRetryTimer = commonTimer(interval: 120) { [weak self] in
+            guard let self, self.clientActive else { return }
+            if !self.client.isRunning || !self.client.isInitialized {
+                self.minimumClientGeneration = self.client.currentGeneration + 1
                 self.client.restart()
             }
         }
+        localWatchTimer = commonTimer(interval: 1) { [weak self] in
+            self?.pollLocalFingerprint()
+        }
+        localPollTimer = commonTimer(interval: 60) { [weak self] in
+            guard let self, self.clientActive, self.localFallbackActive else { return }
+            self.loadLocalFallback()
+        }
+    }
+
+    private func commonTimer(interval: TimeInterval, action: @escaping () -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in action() }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     private func evaluateRuntimeState() {
-        let shouldRun = !settings.followCodex || processMonitor.isRunning
-        if shouldRun, !clientActive {
-            clientActive = true
-            statusText = "正在准备 Codex 实时接口…"
-            connected = false
-            client.start()
-            loadLocalFallback()
-        } else if !shouldRun, clientActive {
-            clientActive = false
-            connected = false
-            statusText = "等待 Codex 启动"
-            client.stop()
+        let runtimeAllowsOrb = OrbRuntimePolicy.runtimeAllowsOrb(
+            followCodex: settings.followCodex,
+            codexRunning: processMonitor.isRunning
+        )
+        let shouldRun = OrbRuntimePolicy.shouldRunService(
+            followCodex: settings.followCodex,
+            codexRunning: processMonitor.isRunning,
+            manuallyHidden: manuallyHidden
+        )
+        if shouldRun {
+            startServiceIfNeeded()
+        } else {
+            let text = runtimeAllowsOrb ? "悬浮球已隐藏" : "等待 Codex 启动"
+            stopServiceIfNeeded(status: text)
         }
         updatePresentation()
     }
 
-    private func loadLocalFallback() {
+    private func startServiceIfNeeded() {
+        guard !clientActive else { return }
+        serviceGeneration += 1
+        clientActive = true
+        minimumClientGeneration = client.currentGeneration + 1
+        connected = false
+        localFallbackActive = true
+        statusText = "正在准备 Codex 实时接口…"
+        lastLocalFingerprint = nil
+        client.start()
+        loadLocalFallback()
+        pollLocalFingerprint()
+    }
+
+    private func stopServiceIfNeeded(status: String) {
+        detailController.hide()
+        localDebounceTimer?.invalidate()
+        localDebounceTimer = nil
+        serviceGeneration += 1
+        if clientActive {
+            clientActive = false
+            minimumClientGeneration = client.currentGeneration + 1
+            client.stop()
+        }
+        connected = false
+        localFallbackActive = false
+        liveSnapshot = nil
+        snapshot = nil
+        localSnapshotNotBefore = nil
+        statusText = status
+    }
+
+    private func pollAuthState() {
+        guard clientActive, authTracker.pollForChange() else { return }
+        serviceGeneration += 1
+        snapshot = nil
+        liveSnapshot = nil
+        localSnapshotNotBefore = Date()
+        localFallbackActive = false
+        connected = false
+        statusText = "检测到 Codex 账号变化，正在刷新额度…"
+        minimumClientGeneration = client.currentGeneration + 1
+        updatePresentation()
+        client.restart()
+    }
+
+    private func pollLocalFingerprint() {
+        guard clientActive, !localFingerprintCheckInFlight else { return }
+        localFingerprintCheckInFlight = true
         let reader = localReader
+        let generation = serviceGeneration
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let fingerprint = reader.fingerprint()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.localFingerprintCheckInFlight = false
+                guard self.clientActive, self.serviceGeneration == generation else { return }
+                defer { self.lastLocalFingerprint = fingerprint }
+                guard
+                    let previous = self.lastLocalFingerprint,
+                    previous != fingerprint,
+                    self.localFallbackActive
+                else { return }
+                self.scheduleLocalRefresh()
+            }
+        }
+    }
+
+    private func scheduleLocalRefresh() {
+        localDebounceTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.650, repeats: false) { [weak self] _ in
+            self?.localDebounceTimer = nil
+            self?.loadLocalFallback()
+        }
+        localDebounceTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func loadLocalFallback() {
+        guard clientActive, localFallbackActive else { return }
+        let reader = localReader
+        let generation = serviceGeneration
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let local = reader.latest()
             DispatchQueue.main.async {
                 guard
                     let self,
+                    self.clientActive,
+                    self.serviceGeneration == generation,
                     !self.connected,
-                    let local,
-                    self.localSnapshotNotBefore.map({ local.capturedAt >= $0 }) ?? true,
-                    self.snapshot == nil || local.capturedAt > self.snapshot!.capturedAt
-                else {
+                    self.localFallbackActive
+                else { return }
+
+                guard let local else {
+                    if self.snapshot == nil {
+                        self.statusText = "等待 Codex 产生额度数据…"
+                        self.updatePresentation()
+                    }
                     return
                 }
-                self.snapshot = local
-                if self.statusText.isEmpty || self.statusText == "正在准备…" {
-                    self.statusText = "使用本地会话快照"
+                guard AccountSwitchQuotaPolicy.canUseLocalSnapshot(
+                    local,
+                    capturedNotBefore: self.localSnapshotNotBefore
+                ) else {
+                    return
                 }
+                let changed = self.snapshot == nil
+                    || self.snapshot?.isLive == true
+                    || local.capturedAt > self.snapshot!.capturedAt
+                guard changed else { return }
+                self.snapshot = local
                 self.updatePresentation()
             }
         }
     }
 
-    private func scheduleRetry() {
-        guard clientActive, retryTimer == nil else { return }
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.retryTimer = nil
-            if self.clientActive, !self.connected {
-                self.client.restart()
-            }
-        }
-    }
-
     private func updatePresentation() {
-        orbController.update(snapshot: snapshot, connected: connected)
+        orbController.update(
+            snapshot: snapshot,
+            connected: connected,
+            toolTip: orbToolTip()
+        )
         detailController.update(snapshot: snapshot, status: statusText, connected: connected)
         applyOrbVisibility()
         updateStatusItem()
@@ -200,19 +351,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func refreshTimePresentation() {
+        detailController.refreshTimeLabels()
+        orbController.update(
+            snapshot: snapshot,
+            connected: connected,
+            toolTip: orbToolTip()
+        )
+        statusItem?.button?.toolTip = "Token Orb · \(statusText)"
+    }
+
     private func applyOrbVisibility() {
-        let runtimeAllowsOrb = demoMode || !settings.followCodex || processMonitor.isRunning
-        if settings.orbVisible && runtimeAllowsOrb {
+        let runtimeAllowsOrb = demoMode || OrbRuntimePolicy.runtimeAllowsOrb(
+            followCodex: settings.followCodex,
+            codexRunning: processMonitor.isRunning
+        )
+        if runtimeAllowsOrb && !manuallyHidden {
             orbController.show()
         } else {
+            detailController.hide()
             orbController.hide()
         }
     }
 
+    private func orbToolTip() -> String {
+        guard let limiting = snapshot?.mostRestrictiveWindow else {
+            return "\(statusText)\n点击查看详情，右键打开菜单"
+        }
+        return "Codex \(QuotaFormatting.windowName(limiting))剩余 "
+            + "\(QuotaFormatting.roundedPercent(limiting.remainingPercent))%\n"
+            + "\(QuotaFormatting.resetText(limiting))\n"
+            + "\(statusText) · 点击查看详情"
+    }
+
     private func updateStatusItem() {
+        statusItem?.isVisible = demoMode || OrbRuntimePolicy.runtimeAllowsOrb(
+            followCodex: settings.followCodex,
+            codexRunning: processMonitor.isRunning
+        )
         guard let button = statusItem?.button else { return }
         let percent = snapshot?.mostRestrictiveWindow?.remainingPercent
-        button.title = percent.map { " \(Int($0.rounded()))%" } ?? " —"
+        button.title = percent.map { " \(QuotaFormatting.roundedPercent($0))%" } ?? " —"
         button.image = statusImage(color: settings.accentColor, connected: connected)
         button.contentTintColor = nil
         button.toolTip = "Token Orb · \(statusText)"
@@ -265,26 +444,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateMenuState(_ menu: NSMenu) {
-        menu.item(withTag: MenuTag.toggleOrb.rawValue)?.state = settings.orbVisible ? .on : .off
+        let runtimeAllowsOrb = demoMode || OrbRuntimePolicy.runtimeAllowsOrb(
+            followCodex: settings.followCodex,
+            codexRunning: processMonitor.isRunning
+        )
+        menu.item(withTag: MenuTag.toggleOrb.rawValue)?.state = (
+            runtimeAllowsOrb && !manuallyHidden
+        ) ? .on : .off
         menu.item(withTag: MenuTag.followCodex.rawValue)?.state = settings.followCodex ? .on : .off
     }
 
     @objc private func showDetails() {
-        detailController.show(relativeTo: orbController.panel.frame)
+        guard orbController.isVisible else { return }
+        detailController.toggle(relativeTo: orbController.panel.frame)
     }
 
     @objc private func refreshNow() {
-        guard !demoMode else {
+        if demoMode {
             snapshot = .demo()
+            statusText = "演示数据"
+            connected = true
             updatePresentation()
             return
         }
-        snapshot = nil
+        guard !manuallyHidden else { return }
         liveSnapshot = nil
+        localFallbackActive = true
         connected = false
         statusText = "正在刷新实时额度…"
         updatePresentation()
         if clientActive {
+            minimumClientGeneration = client.currentGeneration + 1
             client.restart()
         } else {
             evaluateRuntimeState()
@@ -296,33 +486,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleOrb() {
-        settings.orbVisible.toggle()
-        applyOrbVisibility()
-        if let statusMenu {
-            updateMenuState(statusMenu)
+        manuallyHidden.toggle()
+        if demoMode {
+            if manuallyHidden {
+                detailController.hide()
+            } else {
+                snapshot = .demo()
+                statusText = "演示数据"
+                connected = true
+            }
+            updatePresentation()
+            return
         }
+        evaluateRuntimeState()
     }
 
     @objc private func toggleFollowCodex() {
         settings.followCodex.toggle()
         _ = processMonitor.poll()
+        if settings.followCodex, !processMonitor.isRunning {
+            manuallyHidden = false
+        }
         evaluateRuntimeState()
     }
 
     @objc private func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "Token Orb v1.4.0"
-        alert.informativeText = """
-        macOS 原生版本
-
-        实时监控 Codex 剩余额度，并支持悬浮球、菜单栏、外观设置和跟随 Codex 启动/关闭。
-
-        Copyright © chenxulin
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "好")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        aboutController.show()
     }
 
     @objc private func quit() {

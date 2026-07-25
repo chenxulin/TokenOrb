@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ServiceManagement
+import TokenOrbCore
 
 final class AppSettings {
     static let shared = AppSettings()
@@ -8,7 +9,6 @@ final class AppSettings {
     private enum Key {
         static let orbSize = "orbSize"
         static let accentHex = "accentHex"
-        static let orbVisible = "orbVisible"
         static let followCodex = "followCodex"
         static let orbOriginX = "orbOriginX"
         static let orbOriginY = "orbOriginY"
@@ -20,24 +20,30 @@ final class AppSettings {
         defaults.register(defaults: [
             Key.orbSize: 60.0,
             Key.accentHex: "#2FA4EB",
-            Key.orbVisible: true,
             Key.followCodex: true,
         ])
     }
 
     var orbSize: CGFloat {
-        get { CGFloat(defaults.double(forKey: Key.orbSize)).clamped(to: 44...112) }
-        set { defaults.set(Double(newValue.clamped(to: 44...112)), forKey: Key.orbSize) }
+        get {
+            CGFloat(defaults.double(forKey: Key.orbSize))
+                .clamped(
+                    to: CGFloat(OrbVisualMetrics.minimumDiameter)...CGFloat(OrbVisualMetrics.maximumDiameter)
+                )
+        }
+        set {
+            defaults.set(
+                Double(newValue.clamped(
+                    to: CGFloat(OrbVisualMetrics.minimumDiameter)...CGFloat(OrbVisualMetrics.maximumDiameter)
+                )),
+                forKey: Key.orbSize
+            )
+        }
     }
 
     var accentColor: NSColor {
         get { NSColor(hex: defaults.string(forKey: Key.accentHex) ?? "#2FA4EB") }
         set { defaults.set(newValue.hexString, forKey: Key.accentHex) }
-    }
-
-    var orbVisible: Bool {
-        get { defaults.bool(forKey: Key.orbVisible) }
-        set { defaults.set(newValue, forKey: Key.orbVisible) }
     }
 
     var followCodex: Bool {
@@ -77,6 +83,7 @@ final class AppSettings {
         } catch {
             // Registration can fail for an unbundled development executable.
             // The packaged app retries the next time the preference changes.
+            AppLogger.shared.error(error)
         }
     }
 }
