@@ -14,14 +14,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build EXE, MSI, and release archives
         shell: powershell
         run: .\build.ps1 -OutputDirectory .\dist
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TokenOrb-Windows
           path: dist/TokenOrb.*
@@ -31,7 +31,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run macOS core checks
         run: swift run --package-path macos TokenOrbCoreChecks
@@ -49,7 +49,7 @@ jobs:
           shasum -a 256 -c TokenOrb-macOS.sha256
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TokenOrb-macOS
           path: |
@@ -67,7 +67,7 @@ jobs:
       contents: write
     steps:
       - name: Download verified build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: TokenOrb-*
           path: release-assets

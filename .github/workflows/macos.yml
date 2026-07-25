@@ -23,7 +23,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run core checks
         run: swift run --package-path macos TokenOrbCoreChecks
@@ -41,7 +41,7 @@ jobs:
           shasum -a 256 -c TokenOrb-macOS.sha256
 
       - name: Upload macOS app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TokenOrb-macOS
           path: |
