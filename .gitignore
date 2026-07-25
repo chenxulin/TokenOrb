@@ -18,12 +18,16 @@
 /.vscode/
 /.codex/
 /.agents/
+/.serena/
+/macos/.build/
+/macos/dist/
 *.suo
 *.user
 
 # Logs and Windows metadata
 *.log
 *.tmp
+.DS_Store
 Thumbs.db
 Desktop.ini
 

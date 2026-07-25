@@ -1,0 +1,39 @@
+name: Build Token Orb for macOS
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "macos/**"
+      - ".github/workflows/macos.yml"
+      - "README.md"
+  push:
+    branches:
+      - master
+    paths:
+      - "macos/**"
+      - ".github/workflows/macos.yml"
+      - "README.md"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run core checks
+        run: swift run --package-path macos TokenOrbCoreChecks
+
+      - name: Build macOS app
+        run: bash macos/build_macos.sh
+
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokenOrb-macOS
+          path: macos/dist/TokenOrb-macOS.zip
+          if-no-files-found: error
