@@ -2,7 +2,7 @@
 
 Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
 
-## Windows 安装（推荐）
+## Windows 安装
 
 1. 从右侧 Release 下载 `TokenOrb-Windows.msi`（推荐）进行安装，也可直接运行免安装的 `TokenOrb-Windows.exe`。
 2. 启动 Token Orb。
@@ -14,15 +14,7 @@ Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
 2. 将 `Token Orb.app` 拖入“Applications”后启动。
 3. 当前安装包使用 ad-hoc 签名、尚未公证；若 macOS 提示无法验证开发者，请在 Finder 中按住 Control 点击应用并选择“打开”。
 
-macOS 客户端支持 Apple Silicon 与 Intel、菜单栏、桌面悬浮球、实时额度、外观设置、
-账号切换重连和跟随 Codex 启动/关闭。也可以从源码构建：
-
-```bash
-bash macos/build_macos.sh
-open "macos/dist/Token Orb.app"
-```
-
-详细安装、构建和开发说明见 [`macos/README.md`](./macos/README.md)。
+macOS 客户端支持 Apple Silicon 与 Intel、菜单栏、桌面悬浮球、实时额度、外观设置、账号切换重连和跟随 Codex 启动/关闭。
 
 ## 界面预览
 #### 1. 悬浮球
