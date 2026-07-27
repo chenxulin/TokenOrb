@@ -71,12 +71,11 @@ namespace CodexQuotaBall
             Grid header = new Grid { Margin = new Thickness(0, 0, 0, 12) };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             StackPanel heading = new StackPanel
             {
                 Cursor = Cursors.SizeAll,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 10, 0, 0)
             };
             heading.MouseLeftButtonDown += delegate
             {
@@ -97,11 +96,6 @@ namespace CodexQuotaBall
                 Margin = new Thickness(0, 4, 0, 0)
             });
             header.Children.Add(heading);
-
-            Button close = AppearanceUi.CreateCloseButton();
-            close.Click += delegate { DialogResult = false; };
-            Grid.SetColumn(close, 3);
-            header.Children.Add(close);
             layout.Children.Add(header);
 
             Grid sections = new Grid();
@@ -126,9 +120,12 @@ namespace CodexQuotaBall
                 true);
             previewStyleName = new TextBlock
             {
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = UiPalette.Brush(UiPalette.Text)
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = UiPalette.Brush(UiPalette.Text),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
             };
             Border previewCard = CreatePreviewCard();
             Grid.SetColumn(previewCard, 1);
@@ -278,11 +275,12 @@ namespace CodexQuotaBall
             });
             previewLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            StackPanel text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            Grid labels = new Grid();
             StackPanel status = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top
             };
             status.Children.Add(new Border
             {
@@ -301,10 +299,9 @@ namespace CodexQuotaBall
                 Foreground = UiPalette.Brush(UiPalette.Blue)
             };
             status.Children.Add(eyebrow);
-            text.Children.Add(status);
-            previewStyleName.Margin = new Thickness(0, 2, 0, 0);
-            text.Children.Add(previewStyleName);
-            previewLayout.Children.Add(text);
+            labels.Children.Add(previewStyleName);
+            labels.Children.Add(status);
+            previewLayout.Children.Add(labels);
             previewBall.Margin = new Thickness(18, 0, 0, 0);
             Grid.SetColumn(previewBall, 1);
             previewLayout.Children.Add(previewBall);

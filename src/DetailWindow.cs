@@ -136,6 +136,7 @@ namespace CodexQuotaBall
             FontFamily = new FontFamily("Microsoft YaHei UI");
             LastAutoDismissedUtc = DateTime.MinValue;
             Deactivated += OnDeactivated;
+            PreviewKeyDown += OnPreviewKeyDown;
 
             Border shell = new Border
             {
@@ -274,6 +275,22 @@ namespace CodexQuotaBall
 
             Content = shell;
             UpdateConnection("正在连接", false);
+        }
+
+        internal static bool ShouldDismissForKey(Key key)
+        {
+            return key == Key.Escape;
+        }
+
+        private void OnPreviewKeyDown(object sender, KeyEventArgs args)
+        {
+            if (!ShouldDismissForKey(args.Key))
+            {
+                return;
+            }
+
+            Hide();
+            args.Handled = true;
         }
 
         private void OnDeactivated(object sender, EventArgs args)

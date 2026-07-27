@@ -1,6 +1,12 @@
 import AppKit
 import TokenOrbCore
 
+private final class EscapeClosingDetailPanel: NSPanel {
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(nil)
+    }
+}
+
 final class DetailWindowController: NSWindowController, NSWindowDelegate {
     private let statusLabel = NSTextField(labelWithString: "正在准备…")
     private let statusPill = NSView()
@@ -13,7 +19,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
     private(set) var lastAutoDismissedAt = Date.distantPast
 
     init() {
-        let panel = NSPanel(
+        let panel = EscapeClosingDetailPanel(
             contentRect: NSRect(x: 0, y: 0, width: 344, height: 430),
             styleMask: [.titled, .closable, .fullSizeContentView, .utilityWindow],
             backing: .buffered,

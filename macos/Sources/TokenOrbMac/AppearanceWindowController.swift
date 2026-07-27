@@ -97,6 +97,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         headingStack.orientation = .vertical
         headingStack.alignment = .leading
         headingStack.spacing = 4
+        headingStack.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
 
         sizeSlider.isContinuous = true
         sizeSlider.target = self
@@ -130,7 +131,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         let previewCard = makePreviewCard()
         let header = NSStackView(views: [headingStack, NSView(), previewCard])
         header.orientation = .horizontal
-        header.alignment = .centerY
+        header.alignment = .top
         header.spacing = 14
         let sizeCard = makeSizeCard()
         let colorCard = makeColorCard()
@@ -215,12 +216,27 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         status.orientation = .horizontal
         status.alignment = .centerY
         status.spacing = 6
-        previewStyleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        previewStyleLabel.font = .systemFont(ofSize: 18, weight: .bold)
         previewStyleLabel.textColor = NSColor(hex: "#184863")
-        let labels = NSStackView(views: [status, previewStyleLabel])
-        labels.orientation = .vertical
-        labels.alignment = .leading
-        labels.spacing = 2
+        previewStyleLabel.alignment = .center
+        previewStyleLabel.translatesAutoresizingMaskIntoConstraints = false
+        status.translatesAutoresizingMaskIntoConstraints = false
+        let labels = NSView()
+        labels.translatesAutoresizingMaskIntoConstraints = false
+        labels.addSubview(previewStyleLabel)
+        labels.addSubview(status)
+        NSLayoutConstraint.activate([
+            labels.widthAnchor.constraint(equalToConstant: 104),
+            labels.heightAnchor.constraint(
+                equalToConstant: CGFloat(OrbVisualMetrics.appearancePreviewMaximumDiameter)
+            ),
+            status.leadingAnchor.constraint(equalTo: labels.leadingAnchor),
+            status.topAnchor.constraint(equalTo: labels.topAnchor),
+            previewStyleLabel.centerXAnchor.constraint(equalTo: labels.centerXAnchor),
+            previewStyleLabel.centerYAnchor.constraint(equalTo: labels.centerYAnchor),
+            previewStyleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: labels.leadingAnchor),
+            previewStyleLabel.trailingAnchor.constraint(lessThanOrEqualTo: labels.trailingAnchor),
+        ])
         let row = NSStackView(views: [labels, NSView(), previewOrb])
         row.orientation = .horizontal
         row.alignment = .centerY

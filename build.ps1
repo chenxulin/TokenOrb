@@ -293,6 +293,8 @@ $testArguments = @(
     "/reference:$($referenceByName['PresentationCore.dll'])",
     "/reference:$($referenceByName['PresentationFramework.dll'])",
     "/reference:$($referenceByName['System.Web.Extensions.dll'])",
+    "/reference:$($referenceByName['System.Windows.Forms.dll'])",
+    "/reference:$($referenceByName['System.Drawing.dll'])",
     (Join-Path $sourceDirectory "AppIdentity.cs"),
     (Join-Path $sourceDirectory "ModelsAndParser.cs"),
     (Join-Path $sourceDirectory "CodexAuthStateTracker.cs"),
@@ -302,6 +304,7 @@ $testArguments = @(
     (Join-Path $sourceDirectory "UiHelpers.cs"),
     (Join-Path $sourceDirectory "FollowCodexStartupBehavior.cs"),
     (Join-Path $sourceDirectory "CodexProcessMonitor.cs"),
+    (Join-Path $sourceDirectory "DetailWindow.cs"),
     (Join-Path $sourceDirectory "ParserTests.cs")
 )
 
@@ -421,6 +424,7 @@ $sourceItems = @(
     (Join-Path $projectRoot "installer"),
     (Join-Path $projectRoot "assets"),
     $readmeSource,
+    (Join-Path $projectRoot "RELEASE_NOTES.md"),
     (Join-Path $projectRoot "LICENSE"),
     (Join-Path $projectRoot ".gitignore"),
     $MyInvocation.MyCommand.Path

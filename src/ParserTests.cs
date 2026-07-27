@@ -27,6 +27,7 @@ namespace CodexQuotaBall
                 TestWatcherTrayBehavior();
                 TestAppIdentity();
                 TestWindowSwitcherVisibility();
+                TestDetailWindowDismissKeys();
                 TestQuotaText();
                 TestQuotaTextStyles();
                 TestAnimationFrameRate();
@@ -318,6 +319,14 @@ namespace CodexQuotaBall
             Assert(
                 (hidden & preservedStyle) != 0,
                 "Unrelated extended window styles should be preserved");
+        }
+
+        private static void TestDetailWindowDismissKeys()
+        {
+            Assert(DetailWindow.ShouldDismissForKey(System.Windows.Input.Key.Escape),
+                "Escape should dismiss the detail card");
+            Assert(!DetailWindow.ShouldDismissForKey(System.Windows.Input.Key.Enter),
+                "Other keys should keep the detail card open");
         }
 
         private static void TestFollowCodexStartupDefaults()
