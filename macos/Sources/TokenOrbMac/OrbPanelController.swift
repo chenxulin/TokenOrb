@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import TokenOrbCore
 
 final class OrbPanelController {
@@ -30,7 +31,9 @@ final class OrbPanelController {
         )
         orbView = OrbView(
             frame: orbFrame,
-            accentColor: settings.accentColor
+            accentColor: settings.accentColor,
+            textStyle: settings.textStyle,
+            animationFrameRate: settings.animationFrameRate
         )
         previewView = OrbPreviewView(
             frame: NSRect(origin: .zero, size: previewSize),
@@ -79,13 +82,13 @@ final class OrbPanelController {
         panel.orderOut(nil)
     }
 
-    func update(snapshot: QuotaSnapshot?, connected: Bool, toolTip: String) {
+    func update(snapshot: QuotaSnapshot?, connected: Bool) {
         let remaining = snapshot?.mostRestrictiveWindow?.remainingPercent
         orbView.update(
             remainingPercent: remaining,
             accentColor: settings.accentColor,
-            connected: connected,
-            toolTip: toolTip
+            textStyle: settings.textStyle,
+            connected: connected
         )
     }
 
@@ -98,11 +101,12 @@ final class OrbPanelController {
         )
         panel.setFrame(NSRect(origin: origin, size: previewSize), display: true)
         orbView.frame = Self.orbFrameInPreview(size: size)
+        orbView.setAnimationFrameRate(settings.animationFrameRate)
         orbView.update(
             remainingPercent: orbView.remainingPercent,
             accentColor: settings.accentColor,
-            connected: orbView.connected,
-            toolTip: orbView.toolTip ?? "Token Orb"
+            textStyle: settings.textStyle,
+            connected: orbView.connected
         )
         settings.saveOrbOrigin(Self.orbOrigin(fromPanelOrigin: origin, size: size))
     }
@@ -117,8 +121,10 @@ final class OrbPanelController {
         }
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1_440, height: 900)
         let orbOrigin = NSPoint(
-            x: screen.maxX - size - 36,
-            y: screen.midY - size / 2
+            x: screen.maxX - size - CGFloat(OrbVisualMetrics.defaultTrailingMargin),
+            y: screen.maxY
+                - screen.height * CGFloat(OrbVisualMetrics.defaultTopOffsetRatio)
+                - size
         )
         return panelOrigin(fromOrbOrigin: orbOrigin, size: size)
     }
@@ -188,8 +194,15 @@ final class OrbView: NSView {
     fileprivate private(set) var remainingPercent: Double?
     fileprivate private(set) var connected = false
     private var accentColor: NSColor
+    private var textStyle: OrbTextStyle
+    private var animationFrameRate: Int
+    private var animationDisplayLink: AnyObject?
     private var animationTimer: Timer?
-    private var wavePhase = 0.0
+    private var lastAnimationTimestamp: CFTimeInterval?
+    private var frameScheduleElapsed = 0.0
+    private var animationElapsed = 0.0
+    private var frontWavePhase = 0.0
+    private var backWavePhase = OrbVisualMetrics.backWaveInitialPhase
     private var breathPhase = 0.0
     private var bodyLightPhase = 0.0
     private var activeContextMenu: NSMenu?
@@ -197,33 +210,44 @@ final class OrbView: NSView {
     private var mouseDownLocation: NSPoint?
     private var windowOriginAtMouseDown: NSPoint?
     private var dragged = false
+    private let isInteractive: Bool
 
     var onClick: (() -> Void)?
     var onMove: ((NSPoint) -> Void)?
     var menuProvider: (() -> NSMenu?)?
 
-    init(frame: NSRect, accentColor: NSColor) {
+    init(
+        frame: NSRect,
+        accentColor: NSColor,
+        textStyle: OrbTextStyle,
+        animationFrameRate: Int = OrbVisualMetrics.defaultAnimationFrameRate,
+        isInteractive: Bool = true
+    ) {
         self.accentColor = accentColor
+        self.textStyle = textStyle
+        self.animationFrameRate = OrbVisualMetrics.normalizedAnimationFrameRate(
+            animationFrameRate
+        )
+        self.isInteractive = isInteractive
         super.init(frame: frame)
         wantsLayer = true
-        toolTip = "Token Orb · 点击查看详细额度"
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Token Orb 悬浮球")
-        setAccessibilityHelp("点击查看详细额度，右键打开菜单，拖动可调整位置")
+        setAccessibilityLabel("Codex 剩余额度")
+        setAccessibilityHelp("点击查看额度，右键打开菜单，拖动可调整位置")
         deactivationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
             object: NSApp,
             queue: .main
         ) { [weak self] _ in
-            // Mirrors Windows MainWindow.Deactivated: never leave the orb menu
-            // floating after focus moves to another application.
+            // AppKit normally owns dismissal while tracking the menu. Explicitly
+            // cancel only when the whole application deactivates.
             self?.activeContextMenu?.cancelTracking()
         }
     }
 
     deinit {
-        animationTimer?.invalidate()
+        stopAnimationClock()
         if let deactivationObserver {
             NotificationCenter.default.removeObserver(deactivationObserver)
         }
@@ -237,32 +261,80 @@ final class OrbView: NSView {
     override var isFlipped: Bool { true }
 
     func setAnimating(_ shouldAnimate: Bool) {
-        if shouldAnimate, animationTimer == nil {
-            updateWindowMousePassthrough()
-            let timer = Timer(timeInterval: OrbVisualMetrics.animationInterval, repeats: true) {
-                [weak self] _ in
-                self?.advanceAnimation()
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            animationTimer = timer
+        let isAnimating = animationDisplayLink != nil || animationTimer != nil
+        if shouldAnimate, !isAnimating {
+            startAnimationClock()
         } else if !shouldAnimate {
-            animationTimer?.invalidate()
-            animationTimer = nil
+            stopAnimationClock()
             activeContextMenu?.cancelTracking()
             window?.ignoresMouseEvents = true
         }
     }
 
+    func setAnimationFrameRate(_ frameRate: Int) {
+        let normalized = OrbVisualMetrics.normalizedAnimationFrameRate(frameRate)
+        guard normalized != animationFrameRate else { return }
+        let wasAnimating = animationDisplayLink != nil || animationTimer != nil
+        if wasAnimating {
+            stopAnimationClock()
+        }
+        animationFrameRate = normalized
+        if wasAnimating {
+            startAnimationClock()
+        }
+    }
+
+    private func startAnimationClock() {
+        updateWindowMousePassthrough()
+        lastAnimationTimestamp = nil
+        if #available(macOS 14.0, *) {
+            let link = displayLink(target: self, selector: #selector(displayLinkDidFire(_:)))
+            link.add(to: .main, forMode: .common)
+            animationDisplayLink = link
+        } else {
+            let timer = Timer(
+                timeInterval: OrbVisualMetrics.animationInterval(
+                    frameRate: animationFrameRate
+                ),
+                repeats: true
+            ) {
+                [weak self] _ in
+                self?.advanceAnimation(timestamp: CACurrentMediaTime())
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            animationTimer = timer
+        }
+    }
+
+    private func stopAnimationClock() {
+        if #available(macOS 14.0, *),
+           let link = animationDisplayLink as? CADisplayLink
+        {
+            link.invalidate()
+        }
+        animationDisplayLink = nil
+        animationTimer?.invalidate()
+        animationTimer = nil
+        lastAnimationTimestamp = nil
+        frameScheduleElapsed = 0
+        animationElapsed = 0
+    }
+
+    @available(macOS 14.0, *)
+    @objc private func displayLinkDidFire(_ displayLink: CADisplayLink) {
+        advanceAnimation(timestamp: displayLink.timestamp)
+    }
+
     func update(
         remainingPercent: Double?,
         accentColor: NSColor,
-        connected: Bool,
-        toolTip: String
+        textStyle: OrbTextStyle,
+        connected: Bool
     ) {
         self.remainingPercent = remainingPercent
         self.accentColor = accentColor
+        self.textStyle = textStyle
         self.connected = connected
-        self.toolTip = toolTip
         setAccessibilityValue(
             remainingPercent.map { "剩余 \(QuotaFormatting.roundedPercent($0))%" }
                 ?? "等待额度数据"
@@ -382,17 +454,42 @@ final class OrbView: NSView {
         drawConnectionStatus(center: center, outerRadius: outerRadius, size: size)
     }
 
-    private func advanceAnimation() {
+    private func advanceAnimation(timestamp: CFTimeInterval) {
         updateWindowMousePassthrough()
-        wavePhase = (wavePhase + 0.15).truncatingRemainder(dividingBy: .pi * 2)
-        breathPhase = (
-            breathPhase + .pi * 2 * OrbVisualMetrics.animationInterval
-                / OrbVisualMetrics.outerRingBreathingCycle
-        ).truncatingRemainder(dividingBy: .pi * 2)
-        bodyLightPhase = (
-            bodyLightPhase + .pi * 2 * OrbVisualMetrics.animationInterval
-                / OrbVisualMetrics.bodyLightCycle
-        ).truncatingRemainder(dividingBy: .pi * 2)
+        let elapsed = OrbVisualMetrics.animationElapsedSeconds(
+            previousTimestamp: lastAnimationTimestamp,
+            currentTimestamp: timestamp
+        )
+        lastAnimationTimestamp = timestamp
+        frameScheduleElapsed += elapsed
+        animationElapsed += elapsed
+        let targetInterval = OrbVisualMetrics.animationInterval(
+            frameRate: animationFrameRate
+        )
+        guard frameScheduleElapsed + 0.000_000_1 >= targetInterval else { return }
+        frameScheduleElapsed.formTruncatingRemainder(dividingBy: targetInterval)
+        let frameElapsed = animationElapsed
+        animationElapsed = 0
+        frontWavePhase = OrbVisualMetrics.advancedLoopingPhase(
+            phase: frontWavePhase,
+            radiansPerSecond: OrbVisualMetrics.wavePhaseRadiansPerSecond,
+            elapsedSeconds: frameElapsed
+        )
+        backWavePhase = OrbVisualMetrics.advancedLoopingPhase(
+            phase: backWavePhase,
+            radiansPerSecond: OrbVisualMetrics.backWavePhaseRadiansPerSecond,
+            elapsedSeconds: frameElapsed
+        )
+        breathPhase = OrbVisualMetrics.advancedLoopingPhase(
+            phase: breathPhase,
+            radiansPerSecond: .pi * 2 / OrbVisualMetrics.outerRingBreathingCycle,
+            elapsedSeconds: frameElapsed
+        )
+        bodyLightPhase = OrbVisualMetrics.advancedLoopingPhase(
+            phase: bodyLightPhase,
+            radiansPerSecond: .pi * 2 / OrbVisualMetrics.bodyLightCycle,
+            elapsedSeconds: frameElapsed
+        )
         needsDisplay = true
     }
 
@@ -580,7 +677,7 @@ final class OrbView: NSView {
             radius: radius,
             waterLine: waterLine + amplitude * 0.42,
             amplitude: amplitude * 0.72,
-            phase: -wavePhase * 0.74 + 1.35,
+            phase: backWavePhase,
             cycles: 1.20
         ).fill()
         color.withAlphaComponent(132 / 255).setFill()
@@ -589,7 +686,7 @@ final class OrbView: NSView {
             radius: radius,
             waterLine: waterLine,
             amplitude: amplitude,
-            phase: wavePhase,
+            phase: frontWavePhase,
             cycles: 1.42
         ).fill()
         NSGraphicsContext.restoreGraphicsState()
@@ -612,7 +709,11 @@ final class OrbView: NSView {
         for index in 0...segments {
             let progress = CGFloat(index) / CGFloat(segments)
             let x = left + (right - left) * progress
-            let wave = sin(Double(progress) * .pi * 2 * cycles + phase)
+            let wave = OrbVisualMetrics.waveSurfaceSample(
+                progress: Double(progress),
+                phase: phase,
+                cycles: cycles
+            )
             let y = waterLine + amplitude * CGFloat(wave)
             path.line(to: NSPoint(x: x, y: y))
         }
@@ -662,23 +763,99 @@ final class OrbView: NSView {
     ) {
         guard let remaining else { return }
         let text = "\(QuotaFormatting.roundedPercent(remaining))%"
-        let calculated = text.count >= 4 ? size * 0.242 : size * 0.274
-        let fontSize = calculated.clamped(to: 6.8...37)
+        let fontSize = quotaFontSize(text: text, size: size, style: textStyle)
         let textColor = depleted
             ? OrbPalette.red
             : accentColor.mixed(with: .black, amount: 0.58)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
-            .foregroundColor: textColor,
-        ]
-        let textSize = text.size(withAttributes: attributes)
-        text.draw(
+
+        let attributedText: NSAttributedString
+        if textStyle == .emphasis {
+            let digits = String(text.dropLast())
+            let result = NSMutableAttributedString(
+                string: digits,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: fontSize, weight: .black),
+                    .foregroundColor: textColor,
+                ]
+            )
+            result.append(NSAttributedString(
+                string: "%",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: fontSize * 0.48, weight: .bold),
+                    .foregroundColor: textColor,
+                    .baselineOffset: fontSize * 0.22,
+                ]
+            ))
+            attributedText = result
+        } else {
+            let result = NSMutableAttributedString(
+                string: text,
+                attributes: [
+                    .font: quotaFont(size: fontSize, style: textStyle),
+                    .foregroundColor: textColor,
+                ]
+            )
+            if textStyle != .minimal {
+                let percentScale: CGFloat
+                switch textStyle {
+                case .geometric: percentScale = 0.73
+                case .condensed: percentScale = 0.69
+                case .rounded: percentScale = 0.78
+                case .minimal, .emphasis: percentScale = 1
+                }
+                result.addAttribute(
+                    .font,
+                    value: quotaFont(size: fontSize * percentScale, style: textStyle),
+                    range: NSRange(location: max(0, result.length - 1), length: 1)
+                )
+            }
+            attributedText = result
+        }
+
+        let textSize = attributedText.size()
+        attributedText.draw(
             at: NSPoint(
                 x: center.x - textSize.width / 2,
                 y: center.y - textSize.height / 2 - 0.3
-            ),
-            withAttributes: attributes
+            )
         )
+    }
+
+    private func quotaFontSize(
+        text: String,
+        size: CGFloat,
+        style: OrbTextStyle
+    ) -> CGFloat {
+        var factor: CGFloat = text.count >= 4 ? 0.242 : 0.274
+        switch style {
+        case .minimal:
+            break
+        case .geometric:
+            factor *= 1.035
+        case .condensed:
+            factor *= 1.125
+        case .rounded:
+            factor *= 0.970
+        case .emphasis:
+            factor = text.dropLast().count >= 3 ? 0.286 : 0.332
+        }
+        return (size * factor).clamped(to: 6.8...42)
+    }
+
+    private func quotaFont(size: CGFloat, style: OrbTextStyle) -> NSFont {
+        switch style {
+        case .geometric:
+            return NSFont(name: "Avenir Next Demi Bold", size: size)
+                ?? .systemFont(ofSize: size, weight: .semibold)
+        case .condensed:
+            return NSFont(name: "Avenir Next Condensed Demi Bold", size: size)
+                ?? .systemFont(ofSize: size, weight: .semibold)
+        case .rounded:
+            return NSFont(name: "Arial Rounded MT Bold", size: size)
+                ?? .systemFont(ofSize: size, weight: .bold)
+        case .minimal, .emphasis:
+            return .systemFont(ofSize: size, weight: .bold)
+        }
     }
 
     private func drawConnectionStatus(center: NSPoint, outerRadius: CGFloat, size: CGFloat) {
@@ -762,13 +939,19 @@ final class OrbView: NSView {
         context.restoreGState()
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        isInteractive ? super.hitTest(point) : nil
+    }
+
     override func mouseDown(with event: NSEvent) {
+        guard isInteractive else { return }
         mouseDownLocation = NSEvent.mouseLocation
         windowOriginAtMouseDown = window?.frame.origin
         dragged = false
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard isInteractive else { return }
         guard
             let window,
             let start = mouseDownLocation,
@@ -778,7 +961,10 @@ final class OrbView: NSView {
         }
         let current = NSEvent.mouseLocation
         let delta = NSPoint(x: current.x - start.x, y: current.y - start.y)
-        if abs(delta.x) > 2 || abs(delta.y) > 2 {
+        if OrbVisualMetrics.shouldTreatAsDrag(
+            deltaX: Double(delta.x),
+            deltaY: Double(delta.y)
+        ) {
             dragged = true
         }
         let size = bounds.width
@@ -787,6 +973,7 @@ final class OrbView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard isInteractive else { return }
         if let origin = window?.frame.origin {
             onMove?(origin)
         }
@@ -799,6 +986,7 @@ final class OrbView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        guard isInteractive else { return }
         guard let menu = menuProvider?() else { return }
         activeContextMenu = menu
         NSMenu.popUpContextMenu(menu, with: event, for: self)

@@ -263,7 +263,7 @@ namespace CodexQuotaBall
             footerContent.Children.Add(sourceValue);
             footerContent.Children.Add(new TextBlock
             {
-                Text = "只调用本机 Codex；不会读取 auth.json 或保存登录凭据",
+                    Text = "只调用本机 Codex；auth.json 仅用于内存身份指纹，不保存登录凭据",
                 Foreground = UiPalette.Brush(Color.FromRgb(117, 149, 168)),
                 FontSize = 9.5,
                 Margin = new Thickness(0, 4, 0, 0),
@@ -330,15 +330,6 @@ namespace CodexQuotaBall
                 primaryRow.UpdateValue(snapshot.Primary);
                 secondaryRow.UpdateValue(snapshot.Secondary);
             }
-        }
-
-        public void PositionBeside(Window owner)
-        {
-            double ownerWidth = owner.ActualWidth > 0.0 ? owner.ActualWidth : owner.Width;
-            double ownerHeight = owner.ActualHeight > 0.0 ? owner.ActualHeight : owner.Height;
-            PositionBeside(
-                owner,
-                new Rect(owner.Left, owner.Top, ownerWidth, ownerHeight));
         }
 
         public void PositionBeside(Window owner, Rect anchor)

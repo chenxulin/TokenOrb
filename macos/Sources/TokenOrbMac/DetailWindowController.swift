@@ -19,7 +19,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Token Orb"
+        panel.title = AppIdentity.productName
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isReleasedWhenClosed = false
@@ -105,11 +105,13 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         let size = window.frame.size
         let gap: CGFloat = 8
         let rightOrigin = orbFrame.maxX + gap
-        let x = rightOrigin + size.width <= visible.maxX
+        let preferredX = rightOrigin + size.width <= visible.maxX
             ? rightOrigin
             : orbFrame.minX - size.width - gap
-        let y = (orbFrame.maxY + 12 - size.height)
-            .clamped(to: visible.minY...(visible.maxY - size.height))
+        let maximumX = max(visible.minX, visible.maxX - size.width)
+        let maximumY = max(visible.minY, visible.maxY - size.height)
+        let x = preferredX.clamped(to: visible.minX...maximumX)
+        let y = (orbFrame.maxY + 12 - size.height).clamped(to: visible.minY...maximumY)
         window.setFrameOrigin(NSPoint(x: x, y: y))
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -204,7 +206,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         footerLabel.lineBreakMode = .byTruncatingMiddle
 
         let privacyLabel = NSTextField(
-            wrappingLabelWithString: "只调用本机 Codex；不会读取 auth.json 或保存登录凭据"
+            wrappingLabelWithString: "只调用本机 Codex；auth.json 仅用于内存身份指纹，不保存登录凭据"
         )
         privacyLabel.textColor = .tertiaryLabelColor
         privacyLabel.font = .systemFont(ofSize: 10.5)

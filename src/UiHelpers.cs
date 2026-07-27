@@ -96,10 +96,148 @@ namespace CodexQuotaBall
         }
     }
 
+    public enum QuotaTextStyle
+    {
+        Minimal,
+        Geometric,
+        Condensed,
+        Rounded,
+        Emphasis
+    }
+
+    public static class QuotaTextStyleCatalog
+    {
+        public static QuotaTextStyle Default
+        {
+            get { return QuotaTextStyle.Minimal; }
+        }
+
+        public static QuotaTextStyle Normalize(QuotaTextStyle style)
+        {
+            switch (style)
+            {
+                case QuotaTextStyle.Minimal:
+                case QuotaTextStyle.Geometric:
+                case QuotaTextStyle.Condensed:
+                case QuotaTextStyle.Rounded:
+                case QuotaTextStyle.Emphasis:
+                    return style;
+                default:
+                    return Default;
+            }
+        }
+
+        public static QuotaTextStyle Parse(string value)
+        {
+            if (String.IsNullOrWhiteSpace(value))
+            {
+                return Default;
+            }
+
+            switch (value.Trim().ToLowerInvariant())
+            {
+                case "minimal": return QuotaTextStyle.Minimal;
+                case "geometric": return QuotaTextStyle.Geometric;
+                case "condensed": return QuotaTextStyle.Condensed;
+                case "rounded": return QuotaTextStyle.Rounded;
+                case "emphasis": return QuotaTextStyle.Emphasis;
+                default: return Default;
+            }
+        }
+
+        public static string ToStorageValue(QuotaTextStyle style)
+        {
+            switch (Normalize(style))
+            {
+                case QuotaTextStyle.Geometric: return "geometric";
+                case QuotaTextStyle.Condensed: return "condensed";
+                case QuotaTextStyle.Rounded: return "rounded";
+                case QuotaTextStyle.Emphasis: return "emphasis";
+                default: return "minimal";
+            }
+        }
+
+        public static string GetDisplayName(QuotaTextStyle style)
+        {
+            switch (Normalize(style))
+            {
+                case QuotaTextStyle.Geometric: return "Aureole";
+                case QuotaTextStyle.Condensed: return "Spear";
+                case QuotaTextStyle.Rounded: return "Pearl";
+                case QuotaTextStyle.Emphasis: return "Thunder";
+                default: return "Wing";
+            }
+        }
+    }
+
+    public static class AnimationFrameRateCatalog
+    {
+        public const int Default = 60;
+
+        public static int[] GetOptions()
+        {
+            return new int[] { 30, 60, 90, 120, 180 };
+        }
+
+        public static int Normalize(int frameRate)
+        {
+            switch (frameRate)
+            {
+                case 30:
+                case 60:
+                case 90:
+                case 120:
+                case 180:
+                    return frameRate;
+                default:
+                    return Default;
+            }
+        }
+    }
+
     public sealed class BallAppearanceSettings
     {
         public double Size { get; set; }
         public Color AccentColor { get; set; }
+        public QuotaTextStyle TextStyle { get; set; }
+        public int AnimationFrameRate { get; set; }
+    }
+
+    // Used only when no saved appearance exists, so upgrades keep user choices.
+    public static class BallAppearanceDefaults
+    {
+        public const double Size = 65.0;
+        public const string AccentHex = "#2FA4EB";
+        public const QuotaTextStyle TextStyle = QuotaTextStyle.Condensed;
+        public const int AnimationFrameRate = 60;
+
+        public static Color AccentColor
+        {
+            get { return Color.FromRgb(47, 164, 235); }
+        }
+
+        public static BallAppearanceSettings Create()
+        {
+            return new BallAppearanceSettings
+            {
+                Size = Size,
+                AccentColor = AccentColor,
+                TextStyle = TextStyle,
+                AnimationFrameRate = AnimationFrameRate
+            };
+        }
+    }
+
+    public static class WindowSwitcherVisibilityPolicy
+    {
+        public const int ToolWindowExtendedStyle = 0x00000080;
+        public const int ApplicationWindowExtendedStyle = 0x00040000;
+
+        public static int HideFromSwitcher(int extendedStyle)
+        {
+            return (extendedStyle | ToolWindowExtendedStyle)
+                & ~ApplicationWindowExtendedStyle;
+        }
     }
 
     public static class AppSettings
@@ -179,11 +317,7 @@ namespace CodexQuotaBall
 
         public static BallAppearanceSettings LoadAppearance()
         {
-            BallAppearanceSettings settings = new BallAppearanceSettings
-            {
-                Size = QuotaBallVisual.DefaultDiameter,
-                AccentColor = UiPalette.Blue
-            };
+            BallAppearanceSettings settings = BallAppearanceDefaults.Create();
 
             try
             {
@@ -207,27 +341,60 @@ namespace CodexQuotaBall
                 {
                     settings.AccentColor = color;
                 }
+                if (parts.Length >= 3)
+                {
+                    settings.TextStyle = QuotaTextStyleCatalog.Parse(parts[2]);
+                }
+                int frameRate;
+                if (parts.Length >= 4
+                    && Int32.TryParse(
+                        parts[3],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out frameRate))
+                {
+                    settings.AnimationFrameRate = AnimationFrameRateCatalog.Normalize(frameRate);
+                }
             }
             catch { }
             return settings;
         }
 
-        public static void SaveAppearance(double size, Color color)
+        public static void SaveAppearance(
+            double size,
+            Color color,
+            QuotaTextStyle textStyle,
+            int animationFrameRate)
         {
             try
             {
                 Directory.CreateDirectory(AppDataDirectory);
-                double safeSize = Math.Max(
-                    QuotaBallVisual.MinimumDiameter,
-                    Math.Min(size, QuotaBallVisual.MaximumDiameter));
-                string value = safeSize.ToString("0", CultureInfo.InvariantCulture)
-                    + "|#"
-                    + color.R.ToString("X2", CultureInfo.InvariantCulture)
-                    + color.G.ToString("X2", CultureInfo.InvariantCulture)
-                    + color.B.ToString("X2", CultureInfo.InvariantCulture);
-                File.WriteAllText(AppearanceFile, value);
+                File.WriteAllText(
+                    AppearanceFile,
+                    FormatAppearanceValue(size, color, textStyle, animationFrameRate));
             }
             catch { }
+        }
+
+        internal static string FormatAppearanceValue(
+            double size,
+            Color color,
+            QuotaTextStyle textStyle,
+            int animationFrameRate)
+        {
+            double safeSize = Math.Max(
+                QuotaBallVisual.MinimumDiameter,
+                Math.Min(size, QuotaBallVisual.MaximumDiameter));
+            return safeSize.ToString("0", CultureInfo.InvariantCulture)
+                + "|#"
+                + color.R.ToString("X2", CultureInfo.InvariantCulture)
+                + color.G.ToString("X2", CultureInfo.InvariantCulture)
+                + color.B.ToString("X2", CultureInfo.InvariantCulture)
+                + "|"
+                + QuotaTextStyleCatalog.ToStorageValue(textStyle)
+                + "|"
+                + AnimationFrameRateCatalog.Normalize(animationFrameRate)
+                    .ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool TryParseColor(string text, out Color color)
@@ -290,25 +457,6 @@ namespace CodexQuotaBall
                         + "|" + top.ToString("R", CultureInfo.InvariantCulture));
             }
             catch { }
-        }
-
-        public static bool IsAutoStartEnabled()
-        {
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
-                    "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    false))
-                {
-                    return key != null
-                        && (key.GetValue(RunValueName) != null
-                            || key.GetValue(LegacyRunValueName) != null);
-                }
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         public static bool IsFollowCodexEnabled()

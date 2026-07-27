@@ -5,6 +5,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private enum MenuTag: Int {
         case toggleOrb = 101
         case followCodex = 102
+        case showDetails = 103
+        case refreshNow = 104
     }
 
     private let settings = AppSettings.shared
@@ -57,7 +59,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         _ = processMonitor.poll()
-        settings.updateLoginItem(enabled: settings.followCodex)
+        do {
+            let result = try settings.updateLoginItem(enabled: settings.followCodex)
+            if result == .requiresApproval {
+                showLoginItemApprovalAlert()
+            }
+        } catch {
+            AppLogger.shared.error(error)
+            showFollowCodexError(error)
+        }
         evaluateRuntimeState()
     }
 
@@ -87,9 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem = item
         item.button?.imagePosition = .imageLeading
-        item.button?.toolTip = "Token Orb"
+        item.button?.toolTip = AppIdentity.productName
 
-        let menu = makeMenu()
+        let menu = makeMenu(includeAbout: true)
         menu.delegate = self
         statusMenu = menu
         item.menu = menu
@@ -101,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.showDetails()
         }
         orbController.menuProvider = { [weak self] in
-            self?.makeMenu()
+            self?.makeMenu(includeAbout: false)
         }
         appearanceController.onChange = { [weak self] in
             self?.orbController.applyAppearance()
@@ -343,8 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updatePresentation() {
         orbController.update(
             snapshot: snapshot,
-            connected: connected,
-            toolTip: orbToolTip()
+            connected: connected
         )
         detailController.update(snapshot: snapshot, status: statusText, connected: connected)
         applyOrbVisibility()
@@ -358,10 +367,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         detailController.refreshTimeLabels()
         orbController.update(
             snapshot: snapshot,
-            connected: connected,
-            toolTip: orbToolTip()
+            connected: connected
         )
-        statusItem?.button?.toolTip = "Token Orb · \(statusText)"
+        statusItem?.button?.toolTip = "\(AppIdentity.productName) · \(statusText)"
     }
 
     private func applyOrbVisibility() {
@@ -377,16 +385,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func orbToolTip() -> String {
-        guard let limiting = snapshot?.mostRestrictiveWindow else {
-            return "\(statusText)\n点击查看详情，右键打开菜单"
-        }
-        return "Codex \(QuotaFormatting.windowName(limiting))剩余 "
-            + "\(QuotaFormatting.roundedPercent(limiting.remainingPercent))%\n"
-            + "\(QuotaFormatting.resetText(limiting))\n"
-            + "\(statusText) · 点击查看详情"
-    }
-
     private func updateStatusItem() {
         statusItem?.isVisible = demoMode || OrbRuntimePolicy.runtimeAllowsOrb(
             followCodex: settings.followCodex,
@@ -397,7 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.title = percent.map { " \(QuotaFormatting.roundedPercent($0))%" } ?? " —"
         button.image = statusImage(color: settings.accentColor, connected: connected)
         button.contentTintColor = nil
-        button.toolTip = "Token Orb · \(statusText)"
+        button.toolTip = "\(AppIdentity.productName) · \(statusText)"
     }
 
     private func statusImage(color: NSColor, connected: Bool) -> NSImage {
@@ -417,24 +415,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return image
     }
 
-    private func makeMenu() -> NSMenu {
-        let menu = NSMenu(title: "Token Orb")
+    private func makeMenu(includeAbout: Bool) -> NSMenu {
+        let menu = NSMenu(title: AppIdentity.productName)
         menu.delegate = self
-        menu.addItem(item("查看详细额度", action: #selector(showDetails)))
-        menu.addItem(item("立即刷新", action: #selector(refreshNow)))
-        menu.addItem(item("外观…", action: #selector(showAppearance)))
-        menu.addItem(.separator())
+        let details = item("查看额度", action: #selector(showDetails))
+        details.tag = MenuTag.showDetails.rawValue
+        menu.addItem(details)
+        let refresh = item("立即刷新", action: #selector(refreshNow))
+        refresh.tag = MenuTag.refreshNow.rawValue
+        menu.addItem(refresh)
+        menu.addItem(item("个性化外观", action: #selector(showAppearance)))
 
-        let toggleOrb = item("显示悬浮球", action: #selector(toggleOrb))
+        let toggleOrb = item("显示/隐藏悬浮球", action: #selector(toggleOrb))
         toggleOrb.tag = MenuTag.toggleOrb.rawValue
         menu.addItem(toggleOrb)
 
-        let follow = item("跟随 Codex 启动/关闭", action: #selector(toggleFollowCodex))
+        let follow = item("跟随 Codex 启动/退出", action: #selector(toggleFollowCodex))
         follow.tag = MenuTag.followCodex.rawValue
         menu.addItem(follow)
 
-        menu.addItem(.separator())
-        menu.addItem(item("关于 Token Orb", action: #selector(showAbout)))
+        if includeAbout {
+            menu.addItem(item("关于", action: #selector(showAbout)))
+        }
         menu.addItem(item("退出", action: #selector(quit)))
         updateMenuState(menu)
         return menu
@@ -451,10 +453,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             followCodex: settings.followCodex,
             codexRunning: processMonitor.isRunning
         )
-        menu.item(withTag: MenuTag.toggleOrb.rawValue)?.state = (
-            runtimeAllowsOrb && !manuallyHidden
-        ) ? .on : .off
-        menu.item(withTag: MenuTag.followCodex.rawValue)?.state = settings.followCodex ? .on : .off
+        let orbVisible = runtimeAllowsOrb && !manuallyHidden
+        menu.item(withTag: MenuTag.toggleOrb.rawValue)?.state = orbVisible ? .on : .off
+        menu.item(withTag: MenuTag.showDetails.rawValue)?.isEnabled = orbVisible
+        menu.item(withTag: MenuTag.refreshNow.rawValue)?.isEnabled = orbVisible
+        let followItem = menu.item(withTag: MenuTag.followCodex.rawValue)
+        followItem?.state = demoMode ? .off : (settings.followCodex ? .on : .off)
+        followItem?.isEnabled = !demoMode
     }
 
     @objc private func showDetails() {
@@ -485,6 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showAppearance() {
+        detailController.hide()
         appearanceController.show()
     }
 
@@ -505,7 +511,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleFollowCodex() {
-        settings.followCodex.toggle()
+        guard !demoMode else { return }
+        let enabled = !settings.followCodex
+        do {
+            let result = try settings.setFollowCodex(enabled)
+            if result == .requiresApproval {
+                showLoginItemApprovalAlert()
+            }
+        } catch {
+            AppLogger.shared.error(error)
+            showFollowCodexError(error)
+            return
+        }
         _ = processMonitor.poll()
         if settings.followCodex, !processMonitor.isRunning {
             manuallyHidden = false
@@ -514,7 +531,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showAbout() {
+        detailController.hide()
         aboutController.show()
+    }
+
+    private func showFollowCodexError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "无法更新 Codex 跟随设置"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "确定")
+        alert.runModal()
+    }
+
+    private func showLoginItemApprovalAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "需要允许 \(AppIdentity.productName) 在登录时打开"
+        alert.informativeText = "请在系统设置的登录项中允许 \(AppIdentity.productName)，跟随 Codex 才能在下次登录后自动生效。"
+        alert.addButton(withTitle: "打开登录项设置")
+        alert.addButton(withTitle: "稍后")
+        if alert.runModal() == .alertFirstButtonReturn {
+            settings.openLoginItemSettings()
+        }
     }
 
     @objc private func quit() {

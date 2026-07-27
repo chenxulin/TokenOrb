@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
-using System.Windows.Threading;
 
 namespace CodexQuotaBall
 {
@@ -18,7 +17,7 @@ namespace CodexQuotaBall
         public static Color Green = Color.FromRgb(45, 194, 145);
         public static Color Amber = Color.FromRgb(239, 169, 66);
         public static Color Red = Color.FromRgb(232, 100, 119);
-        public static Color Blue = Color.FromRgb(47, 164, 235);
+        public static Color Blue = BallAppearanceDefaults.AccentColor;
         public static Color OuterRingBlue = Color.FromRgb(125, 211, 252);
 
         public static SolidColorBrush Brush(Color color)
@@ -118,18 +117,32 @@ namespace CodexQuotaBall
 
     public sealed class QuotaBallVisual : FrameworkElement
     {
-        public const double DefaultDiameter = 60.0;
+        public const double DefaultDiameter = BallAppearanceDefaults.Size;
         public const double MinimumDiameter = 24.0;
         public const double MaximumDiameter = 160.0;
+        internal const double AnimationFramesPerSecond = 60.0;
+        internal const double AnimationIntervalSeconds = 1.0 / AnimationFramesPerSecond;
+        internal const double MaximumAnimationDeltaSeconds = 0.050;
+        internal const double WavePhaseRadiansPerSecond = 3.75;
+        internal const double BackWaveSpeedRatio = 0.61803398875;
+        internal const double BackWavePhaseRadiansPerSecond =
+            -WavePhaseRadiansPerSecond * BackWaveSpeedRatio;
+        internal const double BackWaveInitialPhase = 1.35;
         internal const double OuterRingBreathingCycleSeconds = 3.0;
         internal const double BodyLightCycleSeconds = 5.6;
         internal const double WaitingWaveRemainingPercent = 50.0;
         private QuotaSnapshot snapshot;
         private bool connected;
-        private string statusText = "正在连接";
-        private Color accentColor = UiPalette.Blue;
-        private readonly DispatcherTimer waveTimer;
-        private double wavePhase;
+        private Color accentColor = BallAppearanceDefaults.AccentColor;
+        private QuotaTextStyle textStyle = BallAppearanceDefaults.TextStyle;
+        private int animationFrameRate = BallAppearanceDefaults.AnimationFrameRate;
+        private bool animationClockActive;
+        private bool hasLastRenderingTime;
+        private TimeSpan lastRenderingTime;
+        private double frameScheduleElapsedSeconds;
+        private double animationElapsedSeconds;
+        private double frontWavePhase;
+        private double backWavePhase = BackWaveInitialPhase;
         private double breathPhase;
         private double bodyLightPhase;
 
@@ -142,23 +155,37 @@ namespace CodexQuotaBall
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
 
-            waveTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher);
-            waveTimer.Interval = TimeSpan.FromMilliseconds(40.0);
-            waveTimer.Tick += OnWaveTimerTick;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
             IsVisibleChanged += OnIsVisibleChanged;
         }
 
-        public void SetAppearance(double diameter, Color color)
+        public void SetAppearance(
+            double diameter,
+            Color color,
+            QuotaTextStyle style,
+            int frameRate)
         {
             double safeDiameter = Math.Max(MinimumDiameter, Math.Min(diameter, MaximumDiameter));
             Width = safeDiameter;
             Height = safeDiameter;
             accentColor = color;
+            textStyle = QuotaTextStyleCatalog.Normalize(style);
+            SetAnimationFrameRate(frameRate);
             UpdateShadow(safeDiameter);
             InvalidateMeasure();
             InvalidateVisual();
+        }
+
+        public void SetAnimationFrameRate(int frameRate)
+        {
+            int normalized = AnimationFrameRateCatalog.Normalize(frameRate);
+            if (animationFrameRate == normalized)
+            {
+                return;
+            }
+            animationFrameRate = normalized;
+            ResetAnimationTiming();
         }
 
         private void UpdateShadow(double diameter)
@@ -172,16 +199,10 @@ namespace CodexQuotaBall
             };
         }
 
-        public void SetState(QuotaSnapshot value, bool isConnected, string status)
+        public void SetState(QuotaSnapshot value, bool isConnected)
         {
             snapshot = value;
             connected = isConnected;
-            if (!String.IsNullOrWhiteSpace(status))
-            {
-                statusText = status;
-            }
-            double diameter = Double.IsNaN(Width) || Width <= 0.0 ? DefaultDiameter : Width;
-            UpdateShadow(diameter);
             InvalidateVisual();
         }
 
@@ -290,6 +311,10 @@ namespace CodexQuotaBall
                 bodyHighlightRadius,
                 bodyHighlightRadius);
 
+            drawingContext.PushClip(new EllipseGeometry(
+                center,
+                bodyHighlightRadius,
+                bodyHighlightRadius));
             Point sheenOffset = CalculateBodySheenOffset(bodyLightPhase);
             Point sheenCenter = new Point(
                 center.X + outerRadius * sheenOffset.X,
@@ -314,10 +339,6 @@ namespace CodexQuotaBall
             bodySheen.GradientStops.Add(new GradientStop(
                 Color.FromArgb(0, sheenTint.R, sheenTint.G, sheenTint.B),
                 1.0));
-            drawingContext.PushClip(new EllipseGeometry(
-                center,
-                bodyHighlightRadius,
-                bodyHighlightRadius));
             drawingContext.DrawEllipse(
                 bodySheen,
                 null,
@@ -390,21 +411,19 @@ namespace CodexQuotaBall
 
             string numberText = FormatQuotaText(limitingWindow);
             double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            double fontSize = numberText.Length >= 4 ? size * 0.242 : size * 0.274;
-            fontSize = Math.Max(6.8, Math.Min(37.0, fontSize));
 
             if (!String.IsNullOrEmpty(numberText))
             {
-                DrawCenteredText(
+                DrawQuotaText(
                     drawingContext,
                     numberText,
-                    fontSize,
-                    FontWeights.Bold,
+                    size,
                     UiPalette.Brush(ResolveQuotaTextColor(
                         accentColor,
                         limitingWindow == null ? (double?)null : remaining)),
                     center,
-                    pixelsPerDip);
+                    pixelsPerDip,
+                    textStyle);
             }
 
             Color statusColor = connected ? UiPalette.Green : UiPalette.Amber;
@@ -525,53 +544,149 @@ namespace CodexQuotaBall
             return Mix(appearanceAccent, Colors.Black, 0.58);
         }
 
-        private void OnWaveTimerTick(object sender, EventArgs e)
+        internal static double NormalizeAnimationElapsedSeconds(double elapsedSeconds)
         {
-            wavePhase += 0.15;
-            if (wavePhase >= Math.PI * 2.0)
+            if (Double.IsNaN(elapsedSeconds)
+                || Double.IsInfinity(elapsedSeconds)
+                || elapsedSeconds <= 0.0)
             {
-                wavePhase -= Math.PI * 2.0;
+                return AnimationIntervalSeconds;
             }
-            breathPhase += Math.PI * 2.0 * waveTimer.Interval.TotalSeconds
-                / OuterRingBreathingCycleSeconds;
-            if (breathPhase >= Math.PI * 2.0)
+            return Math.Min(elapsedSeconds, MaximumAnimationDeltaSeconds);
+        }
+
+        private static double WrapAnimationPhase(double phase)
+        {
+            double fullCycle = Math.PI * 2.0;
+            double wrapped = phase % fullCycle;
+            return wrapped < 0.0 ? wrapped + fullCycle : wrapped;
+        }
+
+        internal static double AdvanceLoopingPhase(
+            double phase,
+            double radiansPerSecond,
+            double elapsedSeconds)
+        {
+            if (Double.IsNaN(phase)
+                || Double.IsInfinity(phase)
+                || Double.IsNaN(radiansPerSecond)
+                || Double.IsInfinity(radiansPerSecond)
+                || Double.IsNaN(elapsedSeconds)
+                || Double.IsInfinity(elapsedSeconds))
             {
-                breathPhase -= Math.PI * 2.0;
+                return 0.0;
             }
-            bodyLightPhase += Math.PI * 2.0 * waveTimer.Interval.TotalSeconds
-                / BodyLightCycleSeconds;
-            if (bodyLightPhase >= Math.PI * 2.0)
+            return WrapAnimationPhase(phase + radiansPerSecond * elapsedSeconds);
+        }
+
+        internal static double CalculateWaveSurfaceSample(
+            double progress,
+            double phase,
+            double cycles)
+        {
+            return Math.Sin(progress * Math.PI * 2.0 * cycles + phase);
+        }
+
+        private void OnAnimationFrame(object sender, EventArgs e)
+        {
+            RenderingEventArgs rendering = e as RenderingEventArgs;
+            if (rendering == null)
             {
-                bodyLightPhase -= Math.PI * 2.0;
+                return;
             }
+
+            double elapsedSeconds = AnimationIntervalSeconds;
+            if (hasLastRenderingTime)
+            {
+                elapsedSeconds = (rendering.RenderingTime - lastRenderingTime).TotalSeconds;
+                if (elapsedSeconds <= 0.0)
+                {
+                    return;
+                }
+            }
+            lastRenderingTime = rendering.RenderingTime;
+            hasLastRenderingTime = true;
+            double elapsed = NormalizeAnimationElapsedSeconds(elapsedSeconds);
+            frameScheduleElapsedSeconds += elapsed;
+            animationElapsedSeconds += elapsed;
+            double targetInterval = 1.0 / animationFrameRate;
+            if (frameScheduleElapsedSeconds + 0.0000001 < targetInterval)
+            {
+                return;
+            }
+            frameScheduleElapsedSeconds %= targetInterval;
+            double frameElapsed = animationElapsedSeconds;
+            animationElapsedSeconds = 0.0;
+            AdvanceAnimation(frameElapsed);
+        }
+
+        private void AdvanceAnimation(double elapsedSeconds)
+        {
+            double elapsed = NormalizeAnimationElapsedSeconds(elapsedSeconds);
+            frontWavePhase = AdvanceLoopingPhase(
+                frontWavePhase,
+                WavePhaseRadiansPerSecond,
+                elapsed);
+            backWavePhase = AdvanceLoopingPhase(
+                backWavePhase,
+                BackWavePhaseRadiansPerSecond,
+                elapsed);
+            breathPhase = AdvanceLoopingPhase(
+                breathPhase,
+                Math.PI * 2.0 / OuterRingBreathingCycleSeconds,
+                elapsed);
+            bodyLightPhase = AdvanceLoopingPhase(
+                bodyLightPhase,
+                Math.PI * 2.0 / BodyLightCycleSeconds,
+                elapsed);
             InvalidateVisual();
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            UpdateWaveTimer();
+            UpdateAnimationClock();
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
-            waveTimer.Stop();
+            StopAnimationClock();
         }
 
         private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            UpdateWaveTimer();
+            UpdateAnimationClock();
         }
 
-        private void UpdateWaveTimer()
+        private void UpdateAnimationClock()
         {
-            if (IsLoaded && IsVisible)
+            if (IsLoaded && IsVisible && !animationClockActive)
             {
-                waveTimer.Start();
+                hasLastRenderingTime = false;
+                CompositionTarget.Rendering += OnAnimationFrame;
+                animationClockActive = true;
             }
-            else
+            else if ((!IsLoaded || !IsVisible) && animationClockActive)
             {
-                waveTimer.Stop();
+                StopAnimationClock();
             }
+        }
+
+        private void StopAnimationClock()
+        {
+            if (!animationClockActive)
+            {
+                return;
+            }
+            CompositionTarget.Rendering -= OnAnimationFrame;
+            animationClockActive = false;
+            ResetAnimationTiming();
+        }
+
+        private void ResetAnimationTiming()
+        {
+            hasLastRenderingTime = false;
+            frameScheduleElapsedSeconds = 0.0;
+            animationElapsedSeconds = 0.0;
         }
 
         private void DrawWaterWave(
@@ -595,7 +710,7 @@ namespace CodexQuotaBall
                 radius,
                 waterLine + amplitude * 0.42,
                 amplitude * 0.72,
-                -wavePhase * 0.74 + 1.35,
+                backWavePhase,
                 1.20);
             drawingContext.DrawGeometry(
                 UiPalette.Brush(Color.FromArgb(72, waveColor.R, waveColor.G, waveColor.B)),
@@ -607,7 +722,7 @@ namespace CodexQuotaBall
                 radius,
                 waterLine,
                 amplitude,
-                wavePhase,
+                frontWavePhase,
                 1.42);
             drawingContext.DrawGeometry(
                 UiPalette.Brush(Color.FromArgb(132, waveColor.R, waveColor.G, waveColor.B)),
@@ -655,7 +770,8 @@ namespace CodexQuotaBall
                 {
                     double progress = (double)index / segments;
                     double x = left + (right - left) * progress;
-                    double y = waterLine + amplitude * Math.Sin(progress * Math.PI * 2.0 * cycles + phase);
+                    double y = waterLine + amplitude
+                        * CalculateWaveSurfaceSample(progress, phase, cycles);
                     context.LineTo(new Point(x, y), true, false);
                 }
                 context.LineTo(new Point(right, bottom), true, false);
@@ -719,26 +835,164 @@ namespace CodexQuotaBall
                     .ToString("0", CultureInfo.InvariantCulture) + "%";
         }
 
-        private static void DrawCenteredText(
+        internal static double CalculateQuotaFontSize(
+            string text,
+            double size,
+            QuotaTextStyle style)
+        {
+            string safeText = text ?? String.Empty;
+            QuotaTextStyle safeStyle = QuotaTextStyleCatalog.Normalize(style);
+            double factor = safeText.Length >= 4 ? 0.242 : 0.274;
+            switch (safeStyle)
+            {
+                case QuotaTextStyle.Geometric:
+                    factor *= 1.035;
+                    break;
+                case QuotaTextStyle.Condensed:
+                    factor *= 1.125;
+                    break;
+                case QuotaTextStyle.Rounded:
+                    factor *= 0.970;
+                    break;
+                case QuotaTextStyle.Emphasis:
+                    int digitCount = safeText.EndsWith("%", StringComparison.Ordinal)
+                        ? safeText.Length - 1
+                        : safeText.Length;
+                    factor = digitCount >= 3 ? 0.286 : 0.332;
+                    break;
+            }
+            return Math.Max(6.8, Math.Min(42.0, size * factor));
+        }
+
+        internal static void DrawQuotaText(
             DrawingContext drawingContext,
             string text,
-            double fontSize,
-            FontWeight weight,
+            double size,
             Brush brush,
             Point center,
-            double pixelsPerDip)
+            double pixelsPerDip,
+            QuotaTextStyle style)
         {
+            QuotaTextStyle safeStyle = QuotaTextStyleCatalog.Normalize(style);
+            double fontSize = CalculateQuotaFontSize(text, size, safeStyle);
+            if (safeStyle == QuotaTextStyle.Emphasis
+                && text.EndsWith("%", StringComparison.Ordinal))
+            {
+                DrawEmphasisQuotaText(
+                    drawingContext,
+                    text.Substring(0, text.Length - 1),
+                    fontSize,
+                    brush,
+                    center,
+                    pixelsPerDip);
+                return;
+            }
+
+            Typeface typeface = ResolveQuotaTypeface(safeStyle);
             FormattedText formatted = new FormattedText(
                 text,
                 CultureInfo.GetCultureInfo("zh-CN"),
                 FlowDirection.LeftToRight,
-                new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, weight, FontStretches.Normal),
+                typeface,
                 fontSize,
                 brush,
                 pixelsPerDip);
+
+            double percentScale = ResolvePercentScale(safeStyle);
+            if (percentScale < 0.999
+                && text.EndsWith("%", StringComparison.Ordinal))
+            {
+                formatted.SetFontSize(fontSize * percentScale, text.Length - 1, 1);
+            }
             drawingContext.DrawText(
                 formatted,
                 new Point(center.X - formatted.Width / 2.0, center.Y - formatted.Height / 2.0 - 0.3));
+        }
+
+        private static Typeface ResolveQuotaTypeface(QuotaTextStyle style)
+        {
+            switch (style)
+            {
+                case QuotaTextStyle.Geometric:
+                    return new Typeface(
+                        new FontFamily("Bahnschrift"),
+                        FontStyles.Normal,
+                        FontWeights.SemiBold,
+                        FontStretches.SemiExpanded);
+                case QuotaTextStyle.Condensed:
+                    return new Typeface(
+                        new FontFamily("Bahnschrift SemiCondensed"),
+                        FontStyles.Normal,
+                        FontWeights.SemiBold,
+                        FontStretches.Condensed);
+                case QuotaTextStyle.Rounded:
+                    return new Typeface(
+                        new FontFamily("Trebuchet MS"),
+                        FontStyles.Normal,
+                        FontWeights.Bold,
+                        FontStretches.Normal);
+                default:
+                    return new Typeface(
+                        new FontFamily("Microsoft YaHei UI"),
+                        FontStyles.Normal,
+                        FontWeights.Bold,
+                        FontStretches.Normal);
+            }
+        }
+
+        private static double ResolvePercentScale(QuotaTextStyle style)
+        {
+            switch (style)
+            {
+                case QuotaTextStyle.Geometric: return 0.73;
+                case QuotaTextStyle.Condensed: return 0.69;
+                case QuotaTextStyle.Rounded: return 0.78;
+                default: return 1.0;
+            }
+        }
+
+        private static void DrawEmphasisQuotaText(
+            DrawingContext drawingContext,
+            string digits,
+            double digitFontSize,
+            Brush brush,
+            Point center,
+            double pixelsPerDip)
+        {
+            Typeface digitTypeface = new Typeface(
+                new FontFamily("Segoe UI"),
+                FontStyles.Normal,
+                FontWeights.Black,
+                FontStretches.Normal);
+            FormattedText digitText = new FormattedText(
+                digits,
+                CultureInfo.GetCultureInfo("zh-CN"),
+                FlowDirection.LeftToRight,
+                digitTypeface,
+                digitFontSize,
+                brush,
+                pixelsPerDip);
+            FormattedText percentText = new FormattedText(
+                "%",
+                CultureInfo.GetCultureInfo("zh-CN"),
+                FlowDirection.LeftToRight,
+                new Typeface(
+                    new FontFamily("Segoe UI"),
+                    FontStyles.Normal,
+                    FontWeights.Bold,
+                    FontStretches.Normal),
+                digitFontSize * 0.48,
+                brush,
+                pixelsPerDip);
+
+            double gap = Math.Max(0.2, digitFontSize * 0.015);
+            double totalWidth = digitText.Width + gap + percentText.Width;
+            double left = center.X - totalWidth / 2.0;
+            double digitTop = center.Y - digitText.Height / 2.0 - 0.4;
+            drawingContext.DrawText(digitText, new Point(left, digitTop));
+            drawingContext.DrawText(
+                percentText,
+                new Point(left + digitText.Width + gap, digitTop + digitFontSize * 0.035));
         }
     }
 }

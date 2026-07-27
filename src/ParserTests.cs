@@ -26,7 +26,10 @@ namespace CodexQuotaBall
                 TestFollowCodexStartupDefaults();
                 TestWatcherTrayBehavior();
                 TestAppIdentity();
+                TestWindowSwitcherVisibility();
                 TestQuotaText();
+                TestQuotaTextStyles();
+                TestAnimationFrameRate();
                 TestWaveColors();
                 TestWaveVisibility();
                 TestDepletedBallBorder();
@@ -293,11 +296,28 @@ namespace CodexQuotaBall
 
         private static void TestAppIdentity()
         {
-            Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
+            Assert(AppIdentity.ProductName == "TokenOrb", "Product name should be TokenOrb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.5.1", "Display version should be v1.5.1");
-            Assert(AppIdentity.ProtocolVersion == "1.5.1", "Protocol version should be semantic v1.5.1");
+            Assert(AppIdentity.DisplayVersion == "v1.5.2", "Display version should be v1.5.2");
+            Assert(AppIdentity.ProtocolVersion == "1.5.2", "Protocol version should be semantic v1.5.2");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
+        }
+
+        private static void TestWindowSwitcherVisibility()
+        {
+            const int preservedStyle = 0x00000020;
+            int original = preservedStyle
+                | WindowSwitcherVisibilityPolicy.ApplicationWindowExtendedStyle;
+            int hidden = WindowSwitcherVisibilityPolicy.HideFromSwitcher(original);
+            Assert(
+                (hidden & WindowSwitcherVisibilityPolicy.ToolWindowExtendedStyle) != 0,
+                "The orb should use the tool-window style to stay out of Alt+Tab");
+            Assert(
+                (hidden & WindowSwitcherVisibilityPolicy.ApplicationWindowExtendedStyle) == 0,
+                "The orb should not force the application-window style");
+            Assert(
+                (hidden & preservedStyle) != 0,
+                "Unrelated extended window styles should be preserved");
         }
 
         private static void TestFollowCodexStartupDefaults()
@@ -374,14 +394,73 @@ namespace CodexQuotaBall
                 "Available quota should render its rounded remaining percentage");
         }
 
+        private static void TestQuotaTextStyles()
+        {
+            BallAppearanceSettings installDefaults = BallAppearanceDefaults.Create();
+            Assert(AppSettings.FormatAppearanceValue(
+                installDefaults.Size,
+                installDefaults.AccentColor,
+                installDefaults.TextStyle,
+                installDefaults.AnimationFrameRate) == "65|#2FA4EB|condensed|60",
+                "Fresh installations should use the release appearance defaults");
+            Assert(QuotaTextStyleCatalog.Parse(null) == QuotaTextStyle.Minimal,
+                "Legacy appearance settings should use the minimal text style");
+            Assert(QuotaTextStyleCatalog.Parse("GEOMETRIC") == QuotaTextStyle.Geometric,
+                "Text style storage should be case-insensitive");
+            Assert(QuotaTextStyleCatalog.Parse("condensed") == QuotaTextStyle.Condensed,
+                "Condensed text style should round-trip from storage");
+            Assert(QuotaTextStyleCatalog.Parse("rounded") == QuotaTextStyle.Rounded,
+                "Rounded text style should round-trip from storage");
+            Assert(QuotaTextStyleCatalog.Parse("emphasis") == QuotaTextStyle.Emphasis,
+                "Emphasis text style should round-trip from storage");
+            Assert(QuotaTextStyleCatalog.Parse("future-style") == QuotaTextStyle.Minimal,
+                "Unknown future text styles should safely fall back");
+            Assert(QuotaTextStyleCatalog.ToStorageValue(QuotaTextStyle.Emphasis) == "emphasis",
+                "Emphasis text style should use a stable storage value");
+            Assert(QuotaTextStyleCatalog.Normalize((QuotaTextStyle)999) == QuotaTextStyle.Minimal,
+                "Invalid enum values should safely fall back");
+            Assert(QuotaTextStyleCatalog.GetDisplayName(QuotaTextStyle.Minimal) == "Wing",
+                "Minimal text style should expose the Wing display name");
+            Assert(QuotaTextStyleCatalog.GetDisplayName(QuotaTextStyle.Geometric) == "Aureole",
+                "Geometric text style should expose the Aureole display name");
+            Assert(QuotaTextStyleCatalog.GetDisplayName(QuotaTextStyle.Condensed) == "Spear",
+                "Condensed text style should expose the Spear display name");
+            Assert(QuotaTextStyleCatalog.GetDisplayName(QuotaTextStyle.Rounded) == "Pearl",
+                "Rounded text style should expose the Pearl display name");
+            Assert(QuotaTextStyleCatalog.GetDisplayName(QuotaTextStyle.Emphasis) == "Thunder",
+                "Emphasis text style should expose the Thunder display name");
+            Assert(AppSettings.FormatAppearanceValue(
+                65.0,
+                System.Windows.Media.Color.FromRgb(64, 0, 128),
+                QuotaTextStyle.Emphasis,
+                120) == "65|#400080|emphasis|120",
+                "Appearance storage should persist size, color, text style, and frame rate");
+            Assert(QuotaBallVisual.CalculateQuotaFontSize(
+                "30%",
+                60.0,
+                QuotaTextStyle.Emphasis) > QuotaBallVisual.CalculateQuotaFontSize(
+                    "30%",
+                    60.0,
+                    QuotaTextStyle.Minimal),
+                "Emphasis style should make the quota digits more prominent");
+            Assert(QuotaBallVisual.CalculateQuotaFontSize(
+                "100%",
+                60.0,
+                QuotaTextStyle.Emphasis) < QuotaBallVisual.CalculateQuotaFontSize(
+                    "30%",
+                    60.0,
+                    QuotaTextStyle.Emphasis),
+                "Three-digit quota text should scale down to remain inside the orb");
+        }
+
         private static void TestWaveVisibility()
         {
             const double size = QuotaBallVisual.DefaultDiameter;
             const double radius = 17.66;
             double minimumHeight = 5.0;
 
-            AssertNear(60.0, QuotaBallVisual.DefaultDiameter,
-                "The default orb diameter should be 60 pixels");
+            AssertNear(65.0, QuotaBallVisual.DefaultDiameter,
+                "The default orb diameter should be 65 pixels");
             AssertNear(0.0, QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 0.0),
                 "Zero-percent quota should not render a wave");
             AssertNear(minimumHeight, QuotaBallVisual.CalculateVisibleWaveHeight(size, radius, 0.01),
@@ -408,6 +487,116 @@ namespace CodexQuotaBall
                 "Zero-percent text should use the same low-quota red");
             Assert(QuotaBallVisual.ResolveQuotaTextColor(UiPalette.Blue, 0.01) != UiPalette.Red,
                 "Positive quota text should preserve the normal color");
+        }
+
+        private static void TestAnimationFrameRate()
+        {
+            int[] frameRates = AnimationFrameRateCatalog.GetOptions();
+            Assert(frameRates.Length == 5
+                && frameRates[0] == 30
+                && frameRates[1] == 60
+                && frameRates[2] == 90
+                && frameRates[3] == 120
+                && frameRates[4] == 180,
+                "Appearance settings should expose all supported animation frame rates");
+            Assert(AnimationFrameRateCatalog.Normalize(180) == 180,
+                "Supported high frame rates should be preserved");
+            Assert(AnimationFrameRateCatalog.Normalize(144) == 60,
+                "Unknown frame rates should safely fall back to 60 FPS");
+            AssertNear(60.0, QuotaBallVisual.AnimationFramesPerSecond,
+                "Water-wave animation should target 60 FPS");
+            AssertNear(1.0 / 60.0, QuotaBallVisual.AnimationIntervalSeconds,
+                "Water-wave fallback clock should use a 60 FPS interval");
+            AssertNear(0.15, QuotaBallVisual.WavePhaseRadiansPerSecond * 0.040,
+                "Water-wave angular velocity should preserve the previous animation speed");
+            Assert(QuotaBallVisual.BackWavePhaseRadiansPerSecond < 0.0,
+                "The background wave should move independently in the opposite direction");
+            double fullCycle = Math.PI * 2.0;
+            double frontBeforeWrap = fullCycle - 0.001;
+            double frontElapsed = 0.001;
+            double frontUnwrapped = frontBeforeWrap
+                + QuotaBallVisual.WavePhaseRadiansPerSecond * frontElapsed;
+            double frontAfterWrap = QuotaBallVisual.AdvanceLoopingPhase(
+                frontBeforeWrap,
+                QuotaBallVisual.WavePhaseRadiansPerSecond,
+                frontElapsed);
+            AssertNear(Math.Sin(frontUnwrapped), Math.Sin(frontAfterWrap),
+                "The foreground wave should cross the 2π seam without a visual jump");
+            double backBeforeWrap = 0.001;
+            double backElapsed = 0.001;
+            double backUnwrapped = backBeforeWrap
+                + QuotaBallVisual.BackWavePhaseRadiansPerSecond * backElapsed;
+            double backAfterWrap = QuotaBallVisual.AdvanceLoopingPhase(
+                backBeforeWrap,
+                QuotaBallVisual.BackWavePhaseRadiansPerSecond,
+                backElapsed);
+            AssertNear(Math.Sin(backUnwrapped), Math.Sin(backAfterWrap),
+                "The background wave should cross the zero seam without a visual jump");
+            foreach (int frameRate in frameRates)
+            {
+                double elapsed = 1.0 / frameRate;
+                double frontPhase = 0.0;
+                double backPhase = QuotaBallVisual.BackWaveInitialPhase;
+                double previousFrontSample = QuotaBallVisual.CalculateWaveSurfaceSample(
+                    0.37,
+                    frontPhase,
+                    1.42);
+                double previousBackSample = QuotaBallVisual.CalculateWaveSurfaceSample(
+                    0.63,
+                    backPhase,
+                    1.20);
+                double maximumFrontStep = 0.0;
+                double maximumBackStep = 0.0;
+                int simulatedFrames = frameRate * 120;
+                for (int frame = 0; frame < simulatedFrames; frame++)
+                {
+                    frontPhase = QuotaBallVisual.AdvanceLoopingPhase(
+                        frontPhase,
+                        QuotaBallVisual.WavePhaseRadiansPerSecond,
+                        elapsed);
+                    backPhase = QuotaBallVisual.AdvanceLoopingPhase(
+                        backPhase,
+                        QuotaBallVisual.BackWavePhaseRadiansPerSecond,
+                        elapsed);
+                    double frontSample = QuotaBallVisual.CalculateWaveSurfaceSample(
+                        0.37,
+                        frontPhase,
+                        1.42);
+                    double backSample = QuotaBallVisual.CalculateWaveSurfaceSample(
+                        0.63,
+                        backPhase,
+                        1.20);
+                    maximumFrontStep = Math.Max(
+                        maximumFrontStep,
+                        Math.Abs(frontSample - previousFrontSample));
+                    maximumBackStep = Math.Max(
+                        maximumBackStep,
+                        Math.Abs(backSample - previousBackSample));
+                    previousFrontSample = frontSample;
+                    previousBackSample = backSample;
+                }
+                Assert(
+                    maximumFrontStep
+                        <= Math.Abs(QuotaBallVisual.WavePhaseRadiansPerSecond) * elapsed
+                            + 0.000001,
+                    "Foreground wave should remain continuous across repeated wraps at "
+                        + frameRate.ToString(CultureInfo.InvariantCulture) + " FPS");
+                Assert(
+                    maximumBackStep
+                        <= Math.Abs(QuotaBallVisual.BackWavePhaseRadiansPerSecond) * elapsed
+                            + 0.000001,
+                    "Background wave should remain continuous across repeated wraps at "
+                        + frameRate.ToString(CultureInfo.InvariantCulture) + " FPS");
+            }
+            AssertNear(1.0 / 120.0,
+                QuotaBallVisual.NormalizeAnimationElapsedSeconds(1.0 / 120.0),
+                "Display-synchronized animation should preserve high-refresh frame timing");
+            AssertNear(QuotaBallVisual.MaximumAnimationDeltaSeconds,
+                QuotaBallVisual.NormalizeAnimationElapsedSeconds(1.0),
+                "Animation should cap long frame gaps to prevent visible jumps");
+            AssertNear(QuotaBallVisual.AnimationIntervalSeconds,
+                QuotaBallVisual.NormalizeAnimationElapsedSeconds(Double.NaN),
+                "Invalid frame timing should fall back to 60 FPS");
         }
 
         private static void TestOuterRingBreathing()

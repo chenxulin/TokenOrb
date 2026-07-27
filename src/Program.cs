@@ -20,6 +20,9 @@ namespace CodexQuotaBall
         private const string UiMutexName = "Local\\CodexQuotaBall.Singleton";
         private const string WatcherMutexName = "Local\\CodexQuotaBall.Watcher";
 #endif
+        private static readonly Drawing.Color TrayMenuPanel = Drawing.Color.White;
+        private static readonly Drawing.Color TrayMenuBorder = Drawing.Color.FromArgb(220, 222, 225);
+        private static readonly Drawing.Color TrayMenuHighlight = Drawing.Color.FromArgb(238, 238, 238);
 
         [STAThread]
         public static void Main(string[] args)
@@ -293,10 +296,16 @@ namespace CodexQuotaBall
                 orbItem = new Forms.ToolStripMenuItem("显示/隐藏悬浮球");
                 orbItem.CheckOnClick = false;
                 orbItem.Padding = new Forms.Padding(8, 5, 12, 5);
+                // ContextMenuStrip adds its own bottom inset but lays the first
+                // item directly against the top. Balance the visible whitespace.
+                orbItem.Margin = new Forms.Padding(0, 5, 0, 0);
                 orbItem.Click += delegate { ToggleOrb(); };
                 Forms.ToolStripMenuItem exitItem = new Forms.ToolStripMenuItem("退出");
                 exitItem.Padding = new Forms.Padding(8, 5, 12, 5);
                 exitItem.Click += delegate { ExitFromTray(); };
+                Forms.ToolStripMenuItem aboutItem = new Forms.ToolStripMenuItem("关于");
+                aboutItem.Padding = new Forms.Padding(8, 5, 12, 5);
+                aboutItem.Click += delegate { ShowAbout(); };
 
                 menu = new Forms.ContextMenuStrip();
                 menu.BackColor = Drawing.Color.White;
@@ -308,6 +317,7 @@ namespace CodexQuotaBall
                 menu.ShowCheckMargin = true;
                 menu.Renderer = new TokenOrbMenuRenderer();
                 menu.Items.Add(orbItem);
+                menu.Items.Add(aboutItem);
                 menu.Items.Add(exitItem);
                 menu.Opening += delegate
                 {
@@ -578,6 +588,24 @@ namespace CodexQuotaBall
                 }
             }
 
+            private void ShowAbout()
+            {
+                try
+                {
+                    AboutWindow window = new AboutWindow();
+                    window.ShowDialog();
+                }
+                catch (Exception exception)
+                {
+                    AppSettings.LogError(exception);
+                    Forms.MessageBox.Show(
+                        "无法打开关于页面：" + exception.Message,
+                        AppIdentity.ProductName,
+                        Forms.MessageBoxButtons.OK,
+                        Forms.MessageBoxIcon.Warning);
+                }
+            }
+
             private void RefreshMenuState()
             {
                 bool running = IsUiRunning();
@@ -647,9 +675,6 @@ namespace CodexQuotaBall
 
         private sealed class TokenOrbMenuRenderer : Forms.ToolStripProfessionalRenderer
         {
-            private static readonly Drawing.Color Panel = Drawing.Color.White;
-            private static readonly Drawing.Color Border = Drawing.Color.FromArgb(220, 222, 225);
-            private static readonly Drawing.Color Highlight = Drawing.Color.FromArgb(238, 238, 238);
             private static readonly Drawing.Color Separator = Drawing.Color.FromArgb(226, 227, 229);
             private static readonly Drawing.Color Accent = Drawing.Color.FromArgb(31, 31, 31);
 
@@ -661,7 +686,7 @@ namespace CodexQuotaBall
 
             protected override void OnRenderToolStripBackground(Forms.ToolStripRenderEventArgs args)
             {
-                args.Graphics.Clear(Panel);
+                args.Graphics.Clear(TrayMenuPanel);
             }
 
             protected override void OnRenderToolStripBorder(Forms.ToolStripRenderEventArgs args)
@@ -673,7 +698,7 @@ namespace CodexQuotaBall
                     Math.Max(0, args.ToolStrip.Height - 1));
                 Drawing2D.SmoothingMode oldMode = args.Graphics.SmoothingMode;
                 args.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias;
-                using (Drawing.Pen pen = new Drawing.Pen(Border))
+                using (Drawing.Pen pen = new Drawing.Pen(TrayMenuBorder))
                 using (Drawing2D.GraphicsPath path = CreateRoundedRectangle(bounds, 6))
                 {
                     args.Graphics.DrawPath(pen, path);
@@ -696,7 +721,7 @@ namespace CodexQuotaBall
                 Drawing2D.SmoothingMode oldMode = args.Graphics.SmoothingMode;
                 args.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias;
                 using (Drawing2D.GraphicsPath path = CreateRoundedRectangle(bounds, 5))
-                using (Drawing.SolidBrush brush = new Drawing.SolidBrush(Highlight))
+                using (Drawing.SolidBrush brush = new Drawing.SolidBrush(TrayMenuHighlight))
                 {
                     args.Graphics.FillPath(brush, path);
                 }
@@ -751,26 +776,21 @@ namespace CodexQuotaBall
 
         private sealed class TokenOrbColorTable : Forms.ProfessionalColorTable
         {
-            private static readonly Drawing.Color Panel = Drawing.Color.White;
-            private static readonly Drawing.Color Border = Drawing.Color.FromArgb(220, 222, 225);
-            private static readonly Drawing.Color Highlight = Drawing.Color.FromArgb(238, 238, 238);
-            private static readonly Drawing.Color Check = Drawing.Color.FromArgb(238, 238, 238);
-
-            public override Drawing.Color ToolStripDropDownBackground { get { return Panel; } }
-            public override Drawing.Color ImageMarginGradientBegin { get { return Panel; } }
-            public override Drawing.Color ImageMarginGradientMiddle { get { return Panel; } }
-            public override Drawing.Color ImageMarginGradientEnd { get { return Panel; } }
-            public override Drawing.Color MenuBorder { get { return Border; } }
-            public override Drawing.Color MenuItemBorder { get { return Highlight; } }
-            public override Drawing.Color MenuItemSelected { get { return Highlight; } }
-            public override Drawing.Color MenuItemSelectedGradientBegin { get { return Highlight; } }
-            public override Drawing.Color MenuItemSelectedGradientEnd { get { return Highlight; } }
-            public override Drawing.Color MenuItemPressedGradientBegin { get { return Highlight; } }
-            public override Drawing.Color MenuItemPressedGradientMiddle { get { return Highlight; } }
-            public override Drawing.Color MenuItemPressedGradientEnd { get { return Highlight; } }
-            public override Drawing.Color CheckBackground { get { return Check; } }
-            public override Drawing.Color CheckSelectedBackground { get { return Highlight; } }
-            public override Drawing.Color CheckPressedBackground { get { return Highlight; } }
+            public override Drawing.Color ToolStripDropDownBackground { get { return TrayMenuPanel; } }
+            public override Drawing.Color ImageMarginGradientBegin { get { return TrayMenuPanel; } }
+            public override Drawing.Color ImageMarginGradientMiddle { get { return TrayMenuPanel; } }
+            public override Drawing.Color ImageMarginGradientEnd { get { return TrayMenuPanel; } }
+            public override Drawing.Color MenuBorder { get { return TrayMenuBorder; } }
+            public override Drawing.Color MenuItemBorder { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemSelected { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemSelectedGradientBegin { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemSelectedGradientEnd { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemPressedGradientBegin { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemPressedGradientMiddle { get { return TrayMenuHighlight; } }
+            public override Drawing.Color MenuItemPressedGradientEnd { get { return TrayMenuHighlight; } }
+            public override Drawing.Color CheckBackground { get { return TrayMenuHighlight; } }
+            public override Drawing.Color CheckSelectedBackground { get { return TrayMenuHighlight; } }
+            public override Drawing.Color CheckPressedBackground { get { return TrayMenuHighlight; } }
         }
 
         private static bool HasArgument(string[] args, string expected)
