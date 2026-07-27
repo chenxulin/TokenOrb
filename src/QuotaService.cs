@@ -56,8 +56,14 @@ namespace CodexQuotaBall
             authPollTimer.Tick += delegate { PollAuthState(); };
 
             rpcRefreshTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
-            rpcRefreshTimer.Interval = TimeSpan.FromSeconds(30);
-            rpcRefreshTimer.Tick += delegate { appServer.RequestRefresh(); };
+            rpcRefreshTimer.Interval = TimeSpan.FromSeconds(20);
+            rpcRefreshTimer.Tick += delegate
+            {
+                if (!appServer.IsRecovering)
+                {
+                    appServer.RequestRefresh();
+                }
+            };
 
             rpcRetryTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
             rpcRetryTimer.Interval = TimeSpan.FromMinutes(2);
@@ -65,7 +71,8 @@ namespace CodexQuotaBall
             {
                 RunAppServerBackground(delegate
                 {
-                    if (!appServer.IsRunning || !appServer.IsInitialized)
+                    if ((!appServer.IsRunning || !appServer.IsInitialized)
+                        && !appServer.IsRecovering)
                     {
                         appServer.Restart();
                     }
@@ -88,8 +95,7 @@ namespace CodexQuotaBall
                 return;
             }
 
-            localFallbackActive = true;
-            RefreshLocal(true);
+            localFallbackActive = false;
             StartWatcher();
             localPollTimer.Start();
             authPollTimer.Start();
@@ -108,7 +114,7 @@ namespace CodexQuotaBall
                 return;
             }
 
-            localFallbackActive = true;
+            localFallbackActive = false;
             liveSnapshot = null;
             minimumRpcGeneration = appServer.CurrentGeneration + 1;
             appServer.InvalidateAuthentication();

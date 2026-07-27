@@ -173,16 +173,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             self.evaluateRuntimeState()
         }
-        refreshTimer = commonTimer(interval: 30) { [weak self] in
+        refreshTimer = commonTimer(interval: 20) { [weak self] in
             guard let self, self.clientActive else { return }
-            self.client.refresh()
+            if !self.client.isRecovering {
+                self.client.refresh()
+            }
         }
         authTimer = commonTimer(interval: 1) { [weak self] in
             self?.pollAuthState()
         }
         processRetryTimer = commonTimer(interval: 120) { [weak self] in
             guard let self, self.clientActive else { return }
-            if !self.client.isRunning || !self.client.isInitialized {
+            if (!self.client.isRunning || !self.client.isInitialized)
+                && !self.client.isRecovering
+            {
                 self.minimumClientGeneration = self.client.currentGeneration + 1
                 self.client.restart()
             }
@@ -227,11 +231,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clientActive = true
         minimumClientGeneration = client.currentGeneration + 1
         connected = false
-        localFallbackActive = true
+        localFallbackActive = false
         statusText = "正在准备 Codex 实时接口…"
         lastLocalFingerprint = nil
-        client.start()
-        loadLocalFallback()
+        client.restart()
         pollLocalFingerprint()
     }
 
@@ -456,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showDetails() {
         guard orbController.isVisible else { return }
-        detailController.toggle(relativeTo: orbController.panel.frame)
+        detailController.toggle(relativeTo: orbController.orbFrame)
     }
 
     @objc private func refreshNow() {
@@ -469,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard !manuallyHidden else { return }
         liveSnapshot = nil
-        localFallbackActive = true
+        localFallbackActive = false
         connected = false
         statusText = "正在刷新实时额度…"
         updatePresentation()

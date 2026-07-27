@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public final class CodexAppServerClient: @unchecked Sendable {
@@ -33,6 +34,10 @@ public final class CodexAppServerClient: @unchecked Sendable {
         stateQueue.sync { initialized }
     }
 
+    public var isRecovering: Bool {
+        stateQueue.sync { retryPolicy.consecutiveFailures > 0 || retryWorkItem != nil }
+    }
+
     public var currentGeneration: Int {
         stateQueue.sync { generation }
     }
@@ -43,27 +48,26 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     public func start() {
         stateQueue.async { [weak self] in
-            self?.startLocked()
+            self?.restartLocked(preserveRecoveryState: false)
         }
     }
 
     public func stop() {
         stateQueue.async { [weak self] in
-            self?.stopLocked()
+            self?.stopLocked(preserveRecoveryState: false)
         }
     }
 
     public func stopAndWait() {
         stateQueue.sync {
-            stopLocked()
+            stopLocked(preserveRecoveryState: false)
         }
     }
 
     public func restart() {
         stateQueue.async { [weak self] in
             guard let self else { return }
-            self.stopLocked()
-            self.startLocked()
+            self.restartLocked(preserveRecoveryState: false)
         }
     }
 
@@ -73,14 +77,30 @@ public final class CodexAppServerClient: @unchecked Sendable {
         }
     }
 
-    private func startLocked() {
+    private func restartLocked(preserveRecoveryState: Bool) {
+        guard stopLocked(preserveRecoveryState: preserveRecoveryState) else {
+            handleRealtimeFailureLocked(
+                requestID: nil,
+                code: "old_process_stop_failed",
+                message: "旧 app-server 未能被强制终止。",
+                requireInitialized: false,
+                operation: "重启实时接口失败"
+            )
+            return
+        }
+        startLocked(preserveRecoveryState: preserveRecoveryState)
+    }
+
+    private func startLocked(preserveRecoveryState: Bool) {
         guard process == nil else { return }
         generation += 1
         let activeGeneration = generation
         initialized = false
-        retryPolicy.recordSuccess()
-        hasSuccessfulLiveQuery = false
-        cancelRetryLocked()
+        if !preserveRecoveryState {
+            retryPolicy.recordSuccess()
+            hasSuccessfulLiveQuery = false
+            cancelRetryLocked()
+        }
         requestIDs.removeAll()
         outputBuffer.removeAll(keepingCapacity: true)
 
@@ -133,41 +153,68 @@ public final class CodexAppServerClient: @unchecked Sendable {
                 ],
             ]) {
                 raiseDiagnostic("发送 initialize", error.localizedDescription)
-                raiseStatus("实时接口通信失败，使用本地快照", connected: false, useLocalFallback: true)
+                handleRealtimeFailureLocked(
+                    requestID: nil,
+                    code: "initialize_send_failed",
+                    message: error.localizedDescription,
+                    requireInitialized: false,
+                    operation: "初始化实时接口失败"
+                )
             }
         } catch {
             raiseDiagnostic("启动 Codex app-server", error.localizedDescription)
-            stopLocked()
-            raiseStatus("实时接口不可用，使用本地快照", connected: false, useLocalFallback: true)
+            stopLocked(preserveRecoveryState: true)
+            handleRealtimeFailureLocked(
+                requestID: nil,
+                code: "start_failed",
+                message: error.localizedDescription,
+                requireInitialized: false,
+                operation: "启动实时接口失败"
+            )
         }
     }
 
-    private func stopLocked() {
+    @discardableResult
+    private func stopLocked(preserveRecoveryState: Bool) -> Bool {
         generation += 1
         initialized = false
-        retryPolicy.recordSuccess()
-        hasSuccessfulLiveQuery = false
-        cancelRetryLocked()
+        if !preserveRecoveryState {
+            retryPolicy.recordSuccess()
+            hasSuccessfulLiveQuery = false
+            cancelRetryLocked()
+        }
         requestIDs.removeAll()
         outputBuffer.removeAll(keepingCapacity: false)
+
+        if let active = process {
+            active.terminationHandler = nil
+            if active.isRunning {
+                let result = Darwin.kill(active.processIdentifier, SIGKILL)
+                if result != 0, active.isRunning {
+                    let details = String(cString: strerror(errno))
+                    raiseDiagnostic("强制终止旧 app-server", details)
+                    return false
+                }
+                active.waitUntilExit()
+            }
+        }
 
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         errorPipe?.fileHandleForReading.readabilityHandler = nil
         try? inputPipe?.fileHandleForWriting.close()
-
-        if let process, process.isRunning {
-            process.terminationHandler = nil
-            process.terminate()
-        }
-
         process = nil
         inputPipe = nil
         outputPipe = nil
         errorPipe = nil
+        return true
     }
 
     private func requestRefreshLocked(cancelScheduledRetry: Bool = true) {
         guard initialized, process?.isRunning == true else { return }
+        if cancelScheduledRetry, retryPolicy.consecutiveFailures > 0 {
+            return
+        }
+        guard requestIDs.isEmpty else { return }
         if cancelScheduledRetry {
             cancelRetryLocked()
         }
@@ -229,10 +276,12 @@ public final class CodexAppServerClient: @unchecked Sendable {
                     let message = QuotaParser.string(error?["message"])
                         ?? "Codex 实时接口初始化失败"
                     raiseDiagnostic("初始化 Codex app-server", message)
-                    raiseStatus(
-                        "实时接口不可用，使用本地快照",
-                        connected: false,
-                        useLocalFallback: true
+                    handleRealtimeFailureLocked(
+                        requestID: id,
+                        code: QuotaParser.string(error?["code"]) ?? "initialize_failed",
+                        message: message,
+                        requireInitialized: false,
+                        operation: "初始化实时接口失败"
                     )
                     return
                 }
@@ -242,15 +291,17 @@ public final class CodexAppServerClient: @unchecked Sendable {
                     "params": [:],
                 ]) {
                     raiseDiagnostic("发送 initialized", sendError.localizedDescription)
-                    raiseStatus(
-                        "实时接口通信失败，使用本地快照",
-                        connected: false,
-                        useLocalFallback: true
+                    handleRealtimeFailureLocked(
+                        requestID: nil,
+                        code: "initialized_send_failed",
+                        message: sendError.localizedDescription,
+                        requireInitialized: false,
+                        operation: "初始化实时接口失败"
                     )
                     return
                 }
                 raiseStatus("实时接口已连接，正在读取额度…", connected: false)
-                requestRefreshLocked()
+                requestRefreshLocked(cancelScheduledRetry: false)
                 return
             }
 
@@ -312,14 +363,14 @@ public final class CodexAppServerClient: @unchecked Sendable {
         outputPipe = nil
         errorPipe = nil
         initialized = false
-        cancelRetryLocked()
         requestIDs.removeAll()
-        hasSuccessfulLiveQuery = false
         raiseDiagnostic("Codex app-server 退出", "exitStatus=\(terminated.terminationStatus)")
-        raiseStatus(
-            "Codex 实时接口已断开，使用本地快照",
-            connected: false,
-            useLocalFallback: true
+        handleRealtimeFailureLocked(
+            requestID: nil,
+            code: "process_exited",
+            message: "exitStatus=\(terminated.terminationStatus)",
+            requireInitialized: false,
+            operation: "Codex app-server 已退出"
         )
     }
 
@@ -331,28 +382,50 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     private func handleQueryFailureLocked(requestID: Int?, code: String, message: String) {
-        guard initialized else { return }
+        handleRealtimeFailureLocked(
+            requestID: requestID,
+            code: code,
+            message: message,
+            requireInitialized: true,
+            operation: "额度查询失败"
+        )
+    }
+
+    private func handleRealtimeFailureLocked(
+        requestID: Int?,
+        code: String,
+        message: String,
+        requireInitialized: Bool,
+        operation: String
+    ) {
+        guard !requireInitialized || initialized else { return }
+        // A broken process can report both an RPC/send failure and an exit.
+        // Count the current app-server attempt only once.
+        guard retryWorkItem == nil else { return }
         let decision = retryPolicy.recordFailure()
         let keepLiveStatus = hasSuccessfulLiveQuery && !decision.useLocalFallback
         scheduleRetryLocked(after: decision.delay)
         let requestText = requestID.map { String($0) } ?? "unknown"
         raiseDiagnostic(
-            "额度查询失败",
+            operation,
             "requestId=\(requestText); code=\(code); consecutiveFailures="
                 + "\(retryPolicy.consecutiveFailures); retryDelaySeconds=\(Int(decision.delay)); "
                 + "localFallback=\(decision.useLocalFallback); message=\(message)"
         )
         if decision.useLocalFallback {
+            let text = retryPolicy.consecutiveFailures == RealtimeRetryPolicy.fallbackFailureThreshold
+                ? "实时查询重试 \(RealtimeRetryPolicy.restartRetryCount) 次仍失败，使用本地快照；"
+                    + "\(Int(decision.delay)) 秒后重启 app-server 再试"
+                : "正在使用本地快照；\(Int(decision.delay)) 秒后重启 app-server 重试实时额度"
             raiseStatus(
-                "实时查询连续失败 \(retryPolicy.consecutiveFailures) 次，使用本地快照；"
-                    + "\(Int(decision.delay)) 秒后重试",
+                text,
                 connected: false,
                 useLocalFallback: true
             )
         } else {
             raiseStatus(
-                "正在重试实时查询（\(Int(decision.delay)) 秒后，"
-                    + "\(retryPolicy.consecutiveFailures)/\(RealtimeRetryPolicy.fallbackFailureThreshold)）",
+                "实时查询失败，\(Int(decision.delay)) 秒后重启 app-server 并重试（"
+                    + "\(decision.retryAttempt)/\(RealtimeRetryPolicy.restartRetryCount)）",
                 connected: keepLiveStatus
             )
         }
@@ -362,9 +435,9 @@ public final class CodexAppServerClient: @unchecked Sendable {
         cancelRetryLocked()
         let activeGeneration = generation
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.generation == activeGeneration, self.initialized else { return }
+            guard let self, self.generation == activeGeneration else { return }
             self.retryWorkItem = nil
-            self.requestRefreshLocked(cancelScheduledRetry: false)
+            self.restartLocked(preserveRecoveryState: true)
         }
         retryWorkItem = work
         stateQueue.asyncAfter(deadline: .now() + delay, execute: work)

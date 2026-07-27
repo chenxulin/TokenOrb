@@ -157,8 +157,8 @@ func checkFormatting() {
 
 func checkAppIdentity() {
     expect(AppIdentity.productName == "Token Orb", "product name")
-    expect(AppIdentity.displayVersion == "v1.5.0", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.0", "protocol version")
+    expect(AppIdentity.displayVersion == "v1.5.1", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.1", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 
@@ -200,6 +200,15 @@ func checkAuthStateTracker() {
 func checkOrbVisualMetrics() {
     expect(OrbVisualMetrics.minimumDiameter == 24, "minimum orb diameter")
     expect(OrbVisualMetrics.maximumDiameter == 160, "maximum orb diameter")
+    expect(
+        abs(OrbVisualMetrics.previewWidth / OrbVisualMetrics.previewHeight - 16.0 / 9.0)
+            < 0.000_001,
+        "system preview surface should use a 16:9 rectangle"
+    )
+    expect(OrbVisualMetrics.previewCornerRadius > 0, "system preview should retain round corners")
+    let previewOffset = OrbVisualMetrics.previewOffset(diameter: 60)
+    expect(previewOffset.x == 130, "orb should be horizontally centered in system preview")
+    expect(previewOffset.y == 60, "orb should be vertically centered in system preview")
     expect(OrbVisualMetrics.tone(remaining: nil) == .waiting, "waiting tone")
     expect(OrbVisualMetrics.tone(remaining: 21) == .healthy, "healthy threshold")
     expect(OrbVisualMetrics.tone(remaining: 20) == .warning, "warning threshold")
@@ -220,14 +229,27 @@ func checkRetryPolicy() {
     let first = policy.recordFailure()
     let second = policy.recordFailure()
     let third = policy.recordFailure()
-    expect(first.delay == 2 && !first.useLocalFallback, "first realtime retry")
-    expect(second.delay == 4 && !second.useLocalFallback, "second realtime retry")
-    expect(third.delay == 8 && third.useLocalFallback, "third retry enables fallback")
-    expect(policy.recordFailure().delay == 16, "fourth realtime retry")
-    expect(policy.recordFailure().delay == 30, "retry delay cap")
-    expect(policy.recordFailure().delay == 30, "retry delay remains capped")
+    expect(
+        first.delay == 5 && first.retryAttempt == 1 && !first.useLocalFallback,
+        "first restart retry"
+    )
+    expect(
+        second.delay == 10 && second.retryAttempt == 2 && !second.useLocalFallback,
+        "second restart retry"
+    )
+    expect(
+        third.delay == 15 && third.retryAttempt == 3 && !third.useLocalFallback,
+        "third restart retry"
+    )
+    let fourth = policy.recordFailure()
+    expect(
+        fourth.delay == 30 && fourth.retryAttempt == 0 && fourth.useLocalFallback,
+        "fallback starts after three failed retries"
+    )
+    let fifth = policy.recordFailure()
+    expect(fifth.delay == 30 && fifth.useLocalFallback, "fallback retry stays at 30 seconds")
     policy.recordSuccess()
-    expect(policy.recordFailure().delay == 2, "retry reset")
+    expect(policy.recordFailure().delay == 5, "retry reset")
     expect(
         !LocalFallbackStatePolicy.resolve(
             connected: true,

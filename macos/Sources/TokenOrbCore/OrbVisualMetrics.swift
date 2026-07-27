@@ -14,10 +14,21 @@ public enum OrbVisualMetrics {
     public static let defaultDiameter = 60.0
     public static let minimumDiameter = 24.0
     public static let maximumDiameter = 160.0
+    public static let previewWidth = 320.0
+    public static let previewHeight = 180.0
+    public static let previewCornerRadius = 18.0
     public static let animationInterval = 0.040
     public static let outerRingBreathingCycle = 3.0
     public static let bodyLightCycle = 5.6
     public static let waitingWaveRemainingPercent = 50.0
+
+    public static func previewOffset(diameter: Double) -> (x: Double, y: Double) {
+        let safeDiameter = diameter.clamped(to: 0...min(previewWidth, previewHeight))
+        return (
+            (previewWidth - safeDiameter) / 2,
+            (previewHeight - safeDiameter) / 2
+        )
+    }
 
     public static func tone(remaining: Double?) -> OrbQuotaTone {
         guard let remaining else { return .waiting }

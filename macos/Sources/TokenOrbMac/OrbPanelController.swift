@@ -3,6 +3,7 @@ import TokenOrbCore
 
 final class OrbPanelController {
     let panel: NSPanel
+    private let previewView: OrbPreviewView
     private let orbView: OrbView
     private let settings: AppSettings
 
@@ -16,15 +17,24 @@ final class OrbPanelController {
     init(settings: AppSettings) {
         self.settings = settings
         let size = settings.orbSize
+        let previewSize = NSSize(
+            width: CGFloat(OrbVisualMetrics.previewWidth),
+            height: CGFloat(OrbVisualMetrics.previewHeight)
+        )
+        let orbFrame = Self.orbFrameInPreview(size: size)
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+            contentRect: NSRect(origin: .zero, size: previewSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         orbView = OrbView(
-            frame: NSRect(x: 0, y: 0, width: size, height: size),
+            frame: orbFrame,
             accentColor: settings.accentColor
+        )
+        previewView = OrbPreviewView(
+            frame: NSRect(origin: .zero, size: previewSize),
+            interactiveView: orbView
         )
 
         panel.isOpaque = false
@@ -32,18 +42,31 @@ final class OrbPanelController {
         panel.hasShadow = false
         panel.level = .floating
         panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true
         panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = orbView
-        panel.setFrameOrigin(Self.initialOrigin(size: size, saved: settings.savedOrbOrigin))
+        panel.contentView = previewView
+        panel.setFrameOrigin(Self.initialPanelOrigin(
+            size: size,
+            savedOrbOrigin: settings.savedOrbOrigin
+        ))
 
-        orbView.onMove = { [weak self] origin in
-            self?.settings.saveOrbOrigin(origin)
+        orbView.onMove = { [weak self] panelOrigin in
+            guard let self else { return }
+            self.settings.saveOrbOrigin(Self.orbOrigin(
+                fromPanelOrigin: panelOrigin,
+                size: self.settings.orbSize
+            ))
         }
     }
 
     var isVisible: Bool {
         panel.isVisible
+    }
+
+    var orbFrame: NSRect {
+        let frame = Self.orbFrameInPreview(size: settings.orbSize)
+        return frame.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
     }
 
     func show() {
@@ -67,36 +90,46 @@ final class OrbPanelController {
     }
 
     func applyAppearance() {
-        let oldFrame = panel.frame
-        let center = NSPoint(x: oldFrame.midX, y: oldFrame.midY)
         let size = settings.orbSize
-        let origin = Self.clampedOrigin(
-            NSPoint(x: center.x - size / 2, y: center.y - size / 2),
-            size: size
+        let origin = Self.clampedPanelOrigin(panel.frame.origin, orbSize: size)
+        let previewSize = NSSize(
+            width: CGFloat(OrbVisualMetrics.previewWidth),
+            height: CGFloat(OrbVisualMetrics.previewHeight)
         )
-        panel.setFrame(NSRect(x: origin.x, y: origin.y, width: size, height: size), display: true)
-        orbView.frame = NSRect(x: 0, y: 0, width: size, height: size)
+        panel.setFrame(NSRect(origin: origin, size: previewSize), display: true)
+        orbView.frame = Self.orbFrameInPreview(size: size)
         orbView.update(
             remainingPercent: orbView.remainingPercent,
             accentColor: settings.accentColor,
             connected: orbView.connected,
             toolTip: orbView.toolTip ?? "Token Orb"
         )
-        settings.saveOrbOrigin(origin)
+        settings.saveOrbOrigin(Self.orbOrigin(fromPanelOrigin: origin, size: size))
     }
 
-    private static func initialOrigin(size: CGFloat, saved: NSPoint?) -> NSPoint {
-        if let saved {
-            return clampedOrigin(saved, size: size)
+    private static func initialPanelOrigin(
+        size: CGFloat,
+        savedOrbOrigin: NSPoint?
+    ) -> NSPoint {
+        if let savedOrbOrigin {
+            let orbOrigin = clampedOrbOrigin(savedOrbOrigin, size: size)
+            return panelOrigin(fromOrbOrigin: orbOrigin, size: size)
         }
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1_440, height: 900)
-        return NSPoint(
+        let orbOrigin = NSPoint(
             x: screen.maxX - size - 36,
             y: screen.midY - size / 2
         )
+        return panelOrigin(fromOrbOrigin: orbOrigin, size: size)
     }
 
-    static func clampedOrigin(_ origin: NSPoint, size: CGFloat) -> NSPoint {
+    static func clampedPanelOrigin(_ origin: NSPoint, orbSize: CGFloat) -> NSPoint {
+        let unclampedOrbOrigin = orbOrigin(fromPanelOrigin: origin, size: orbSize)
+        let orbOrigin = clampedOrbOrigin(unclampedOrbOrigin, size: orbSize)
+        return panelOrigin(fromOrbOrigin: orbOrigin, size: orbSize)
+    }
+
+    private static func clampedOrbOrigin(_ origin: NSPoint, size: CGFloat) -> NSPoint {
         let proposed = NSRect(x: origin.x, y: origin.y, width: size, height: size)
         let screen = NSScreen.screens.first(where: { $0.frame.intersects(proposed) }) ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1_440, height: 900)
@@ -104,6 +137,50 @@ final class OrbPanelController {
             x: origin.x.clamped(to: visible.minX...(visible.maxX - size)),
             y: origin.y.clamped(to: visible.minY...(visible.maxY - size))
         )
+    }
+
+    private static func orbFrameInPreview(size: CGFloat) -> NSRect {
+        let offset = OrbVisualMetrics.previewOffset(diameter: Double(size))
+        return NSRect(
+            x: CGFloat(offset.x),
+            y: CGFloat(offset.y),
+            width: size,
+            height: size
+        )
+    }
+
+    private static func panelOrigin(fromOrbOrigin origin: NSPoint, size: CGFloat) -> NSPoint {
+        let offset = OrbVisualMetrics.previewOffset(diameter: Double(size))
+        return NSPoint(x: origin.x - CGFloat(offset.x), y: origin.y - CGFloat(offset.y))
+    }
+
+    private static func orbOrigin(fromPanelOrigin origin: NSPoint, size: CGFloat) -> NSPoint {
+        let offset = OrbVisualMetrics.previewOffset(diameter: Double(size))
+        return NSPoint(x: origin.x + CGFloat(offset.x), y: origin.y + CGFloat(offset.y))
+    }
+}
+
+private final class OrbPreviewView: NSView {
+    private weak var interactiveView: NSView?
+
+    init(frame frameRect: NSRect, interactiveView: NSView) {
+        self.interactiveView = interactiveView
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = CGFloat(OrbVisualMetrics.previewCornerRadius)
+        layer?.masksToBounds = true
+        addSubview(interactiveView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let interactiveView, interactiveView.frame.contains(point) else { return nil }
+        return super.hitTest(point)
     }
 }
 
@@ -161,6 +238,7 @@ final class OrbView: NSView {
 
     func setAnimating(_ shouldAnimate: Bool) {
         if shouldAnimate, animationTimer == nil {
+            updateWindowMousePassthrough()
             let timer = Timer(timeInterval: OrbVisualMetrics.animationInterval, repeats: true) {
                 [weak self] _ in
                 self?.advanceAnimation()
@@ -171,6 +249,7 @@ final class OrbView: NSView {
             animationTimer?.invalidate()
             animationTimer = nil
             activeContextMenu?.cancelTracking()
+            window?.ignoresMouseEvents = true
         }
     }
 
@@ -304,6 +383,7 @@ final class OrbView: NSView {
     }
 
     private func advanceAnimation() {
+        updateWindowMousePassthrough()
         wavePhase = (wavePhase + 0.15).truncatingRemainder(dividingBy: .pi * 2)
         breathPhase = (
             breathPhase + .pi * 2 * OrbVisualMetrics.animationInterval
@@ -314,6 +394,14 @@ final class OrbView: NSView {
                 / OrbVisualMetrics.bodyLightCycle
         ).truncatingRemainder(dividingBy: .pi * 2)
         needsDisplay = true
+    }
+
+    private func updateWindowMousePassthrough() {
+        guard let window else { return }
+        let orbRectInWindow = convert(bounds, to: nil)
+        let orbRectOnScreen = window.convertToScreen(orbRectInWindow)
+        let isDragging = mouseDownLocation != nil
+        window.ignoresMouseEvents = !isDragging && !orbRectOnScreen.contains(NSEvent.mouseLocation)
     }
 
     private func drawBodyShadow(path: NSBezierPath, size: CGFloat) {
@@ -693,9 +781,9 @@ final class OrbView: NSView {
         if abs(delta.x) > 2 || abs(delta.y) > 2 {
             dragged = true
         }
-        let size = window.frame.width
+        let size = bounds.width
         let proposed = NSPoint(x: origin.x + delta.x, y: origin.y + delta.y)
-        window.setFrameOrigin(OrbPanelController.clampedOrigin(proposed, size: size))
+        window.setFrameOrigin(OrbPanelController.clampedPanelOrigin(proposed, orbSize: size))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -707,6 +795,7 @@ final class OrbView: NSView {
         }
         mouseDownLocation = nil
         windowOriginAtMouseDown = nil
+        updateWindowMousePassthrough()
     }
 
     override func rightMouseDown(with event: NSEvent) {

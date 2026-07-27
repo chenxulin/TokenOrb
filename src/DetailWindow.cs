@@ -334,15 +334,26 @@ namespace CodexQuotaBall
 
         public void PositionBeside(Window owner)
         {
+            double ownerWidth = owner.ActualWidth > 0.0 ? owner.ActualWidth : owner.Width;
+            double ownerHeight = owner.ActualHeight > 0.0 ? owner.ActualHeight : owner.Height;
+            PositionBeside(
+                owner,
+                new Rect(owner.Left, owner.Top, ownerWidth, ownerHeight));
+        }
+
+        public void PositionBeside(Window owner, Rect anchor)
+        {
             UpdateLayout();
             double actualWidth = ActualWidth > 0.0 ? ActualWidth : Width;
             double actualHeight = ActualHeight > 0.0 ? ActualHeight : 390.0;
             Rect workArea = GetWorkArea(owner);
 
-            double right = owner.Left + owner.ActualWidth + 8.0;
-            double left = owner.Left - actualWidth - 8.0;
+            double right = anchor.Right + 8.0;
+            double left = anchor.Left - actualWidth - 8.0;
             Left = right + actualWidth <= workArea.Right ? right : Math.Max(workArea.Left, left);
-            Top = Math.Max(workArea.Top, Math.Min(owner.Top - 12.0, workArea.Bottom - actualHeight));
+            Top = Math.Max(
+                workArea.Top,
+                Math.Min(anchor.Top - 12.0, workArea.Bottom - actualHeight));
         }
 
         private static Rect GetWorkArea(Window window)

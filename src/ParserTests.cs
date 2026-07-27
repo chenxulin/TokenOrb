@@ -182,27 +182,34 @@ namespace CodexQuotaBall
 
             RealtimeRetryDecision first = policy.RegisterFailure();
             Assert(first.ConsecutiveFailures == 1, "First realtime failure should be counted");
-            AssertNear(2.0, first.Delay.TotalSeconds, "First retry delay");
+            Assert(first.RetryAttempt == 1, "First failure should schedule restart retry 1");
+            AssertNear(5.0, first.Delay.TotalSeconds, "First retry delay");
             Assert(!first.UseLocalFallback, "First realtime failure should not use local fallback");
 
             RealtimeRetryDecision second = policy.RegisterFailure();
             Assert(second.ConsecutiveFailures == 2, "Second realtime failure should be counted");
-            AssertNear(4.0, second.Delay.TotalSeconds, "Second retry delay");
+            Assert(second.RetryAttempt == 2, "Second failure should schedule restart retry 2");
+            AssertNear(10.0, second.Delay.TotalSeconds, "Second retry delay");
             Assert(!second.UseLocalFallback, "Second realtime failure should not use local fallback");
 
             RealtimeRetryDecision third = policy.RegisterFailure();
             Assert(third.ConsecutiveFailures == 3, "Third realtime failure should be counted");
-            AssertNear(8.0, third.Delay.TotalSeconds, "Third retry delay");
-            Assert(third.UseLocalFallback, "Third realtime failure should use local fallback");
+            Assert(third.RetryAttempt == 3, "Third failure should schedule restart retry 3");
+            AssertNear(15.0, third.Delay.TotalSeconds, "Third retry delay");
+            Assert(!third.UseLocalFallback, "Third failure still has one restart retry to run");
 
-            AssertNear(16.0, policy.RegisterFailure().Delay.TotalSeconds, "Fourth retry delay");
-            AssertNear(30.0, policy.RegisterFailure().Delay.TotalSeconds, "Retry delay cap");
-            AssertNear(30.0, policy.RegisterFailure().Delay.TotalSeconds, "Retry delay remains capped");
+            RealtimeRetryDecision fourth = policy.RegisterFailure();
+            Assert(fourth.RetryAttempt == 0, "Fallback probes are not part of the three fast retries");
+            AssertNear(30.0, fourth.Delay.TotalSeconds, "Fallback retry interval");
+            Assert(fourth.UseLocalFallback, "Local fallback starts after all three retries fail");
+            RealtimeRetryDecision fifth = policy.RegisterFailure();
+            AssertNear(30.0, fifth.Delay.TotalSeconds, "Fallback retry interval remains fixed");
+            Assert(fifth.UseLocalFallback, "Fallback stays active until realtime succeeds");
 
             policy.Reset();
             Assert(policy.ConsecutiveFailures == 0, "Successful realtime query should reset failures");
             RealtimeRetryDecision afterReset = policy.RegisterFailure();
-            AssertNear(2.0, afterReset.Delay.TotalSeconds, "Retry delay should restart after success");
+            AssertNear(5.0, afterReset.Delay.TotalSeconds, "Retry delay should restart after success");
             Assert(!afterReset.UseLocalFallback, "Reset should clear local fallback state");
         }
 
@@ -288,8 +295,8 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "Token Orb", "Product name should be Token Orb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.5.0", "Display version should be v1.5.0");
-            Assert(AppIdentity.ProtocolVersion == "1.5.0", "Protocol version should be semantic v1.5.0");
+            Assert(AppIdentity.DisplayVersion == "v1.5.1", "Display version should be v1.5.1");
+            Assert(AppIdentity.ProtocolVersion == "1.5.1", "Protocol version should be semantic v1.5.1");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 
@@ -507,6 +514,43 @@ namespace CodexQuotaBall
                 "Resizing should preserve the orb horizontal center");
             AssertNear(400.0, resizedPosition.Y,
                 "Resizing should preserve the orb vertical center");
+
+            AssertNear(16.0 / 9.0,
+                OrbWindowMetrics.PreviewWidth / OrbWindowMetrics.PreviewHeight,
+                "The system preview surface should use a 16:9 rectangle");
+            Assert(OrbWindowMetrics.PreviewCornerRadius > 0.0,
+                "The system preview surface should retain rounded corners");
+
+            System.Windows.Rect orbBounds = OrbWindowMetrics.GetOrbBounds(60.0);
+            AssertNear(130.0, orbBounds.X,
+                "The orb should be horizontally centered in the preview surface");
+            AssertNear(60.0, orbBounds.Y,
+                "The orb should be vertically centered in the preview surface");
+
+            System.Windows.Point previewOrigin = OrbWindowMetrics.WindowOriginFromOrbOrigin(
+                new System.Windows.Point(800.0, 420.0),
+                60.0);
+            System.Windows.Point restoredOrbOrigin = OrbWindowMetrics.OrbOriginFromWindowOrigin(
+                previewOrigin,
+                60.0);
+            AssertNear(800.0, restoredOrbOrigin.X,
+                "Preview positioning should preserve the saved orb X coordinate");
+            AssertNear(420.0, restoredOrbOrigin.Y,
+                "Preview positioning should preserve the saved orb Y coordinate");
+
+            System.Windows.Point clampedPreviewOrigin = OrbWindowMetrics.ClampWindowOriginByOrb(
+                OrbWindowMetrics.WindowOriginFromOrbOrigin(
+                    new System.Windows.Point(1900.0, -25.0),
+                    60.0),
+                60.0,
+                workArea);
+            System.Windows.Point clampedOrbOrigin = OrbWindowMetrics.OrbOriginFromWindowOrigin(
+                clampedPreviewOrigin,
+                60.0);
+            AssertNear(1860.0, clampedOrbOrigin.X,
+                "The orb should remain inside the right work-area edge");
+            AssertNear(0.0, clampedOrbOrigin.Y,
+                "The orb should remain inside the top work-area edge");
         }
 
         private static void Assert(bool condition, string message)

@@ -30,6 +30,10 @@ namespace CodexQuotaBall
         private bool companionUi;
         private readonly bool manualUi;
         private bool orbVisible;
+        private HwndSource windowSource;
+
+        private const int WindowMessageNonClientHitTest = 0x0084;
+        private const int HitTestTransparent = -1;
 
         public event Action<bool> OrbVisibilityChanged;
 
@@ -45,12 +49,12 @@ namespace CodexQuotaBall
             this.manualUi = manualUi;
             appearance = AppSettings.LoadAppearance();
             Title = AppIdentity.ProductName;
-            Width = appearance.Size;
-            Height = appearance.Size;
-            MinWidth = appearance.Size;
-            MinHeight = appearance.Size;
-            MaxWidth = appearance.Size;
-            MaxHeight = appearance.Size;
+            Width = OrbWindowMetrics.PreviewWidth;
+            Height = OrbWindowMetrics.PreviewHeight;
+            MinWidth = OrbWindowMetrics.PreviewWidth;
+            MinHeight = OrbWindowMetrics.PreviewHeight;
+            MaxWidth = OrbWindowMetrics.PreviewWidth;
+            MaxHeight = OrbWindowMetrics.PreviewHeight;
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true;
@@ -69,7 +73,25 @@ namespace CodexQuotaBall
             AutomationProperties.SetName(ball, "Codex 剩余额度");
             ball.SetState(null, false, connectionText);
             ball.ContextMenu = CreateContextMenu();
-            Content = ball;
+            ball.HorizontalAlignment = HorizontalAlignment.Center;
+            ball.VerticalAlignment = VerticalAlignment.Center;
+
+            Grid previewSurface = new Grid
+            {
+                Width = OrbWindowMetrics.PreviewWidth,
+                Height = OrbWindowMetrics.PreviewHeight,
+                Background = Brushes.Transparent,
+                Clip = new RectangleGeometry(
+                    new Rect(
+                        0.0,
+                        0.0,
+                        OrbWindowMetrics.PreviewWidth,
+                        OrbWindowMetrics.PreviewHeight),
+                    OrbWindowMetrics.PreviewCornerRadius,
+                    OrbWindowMetrics.PreviewCornerRadius)
+            };
+            previewSurface.Children.Add(ball);
+            Content = previewSurface;
 
             detail = new DetailWindow();
             processMonitor = new CodexProcessMonitor(Dispatcher);
@@ -85,6 +107,7 @@ namespace CodexQuotaBall
             };
 
             Loaded += OnLoaded;
+            SourceInitialized += OnSourceInitialized;
             Closed += OnClosed;
             Deactivated += OnDeactivated;
             MouseLeftButtonDown += OnMouseLeftButtonDown;
@@ -131,6 +154,11 @@ namespace CodexQuotaBall
 
         private void OnClosed(object sender, EventArgs args)
         {
+            if (windowSource != null)
+            {
+                try { windowSource.RemoveHook(OnWindowMessage); } catch { }
+                windowSource = null;
+            }
             SetOrbVisible(false);
             secondTimer.Stop();
             try { detail.Close(); } catch { }
@@ -143,6 +171,48 @@ namespace CodexQuotaBall
             {
                 Application.Current.Shutdown();
             }
+        }
+
+        private void OnSourceInitialized(object sender, EventArgs args)
+        {
+            windowSource = PresentationSource.FromVisual(this) as HwndSource;
+            if (windowSource != null)
+            {
+                windowSource.AddHook(OnWindowMessage);
+            }
+        }
+
+        private IntPtr OnWindowMessage(
+            IntPtr handle,
+            int message,
+            IntPtr wParam,
+            IntPtr lParam,
+            ref bool handled)
+        {
+            if (message != WindowMessageNonClientHitTest)
+            {
+                return IntPtr.Zero;
+            }
+
+            try
+            {
+                long packed = lParam.ToInt64();
+                Point screenPoint = new Point(
+                    unchecked((short)(packed & 0xFFFF)),
+                    unchecked((short)((packed >> 16) & 0xFFFF)));
+                Point windowPoint = PointFromScreen(screenPoint);
+                if (!OrbWindowMetrics.GetOrbBounds(appearance.Size).Contains(windowPoint))
+                {
+                    handled = true;
+                    return new IntPtr(HitTestTransparent);
+                }
+            }
+            catch
+            {
+                // Fall back to normal WPF hit testing if coordinate conversion is unavailable.
+            }
+
+            return IntPtr.Zero;
         }
 
         private void OnDeactivated(object sender, EventArgs args)
@@ -177,6 +247,10 @@ namespace CodexQuotaBall
             {
                 return;
             }
+            if (!OrbWindowMetrics.GetOrbBounds(appearance.Size).Contains(args.GetPosition(this)))
+            {
+                return;
+            }
 
             double oldLeft = Left;
             double oldTop = Top;
@@ -199,7 +273,7 @@ namespace CodexQuotaBall
                 ClampAndSavePosition();
                 if (detail.IsVisible)
                 {
-                    detail.PositionBeside(this);
+                    detail.PositionBeside(this, GetOrbScreenBounds());
                 }
             }
             args.Handled = true;
@@ -385,21 +459,8 @@ namespace CodexQuotaBall
                 QuotaBallVisual.MinimumDiameter,
                 Math.Min(size, QuotaBallVisual.MaximumDiameter)));
             Rect workArea = GetWorkArea();
-            Point currentPosition = new Point(Left, Top);
-            Size currentSize = new Size(
-                ActualWidth > 0.0 ? ActualWidth : Width,
-                ActualHeight > 0.0 ? ActualHeight : Height);
-
-            MinWidth = 0.0;
-            MinHeight = 0.0;
-            MaxWidth = Double.PositiveInfinity;
-            MaxHeight = Double.PositiveInfinity;
-            Width = safeSize;
-            Height = safeSize;
-            MinWidth = safeSize;
-            MinHeight = safeSize;
-            MaxWidth = safeSize;
-            MaxHeight = safeSize;
+            Point currentPosition = GetOrbOrigin();
+            Size currentSize = new Size(appearance.Size, appearance.Size);
             ball.SetAppearance(safeSize, color);
             appearance = new BallAppearanceSettings { Size = safeSize, AccentColor = color };
 
@@ -408,16 +469,15 @@ namespace CodexQuotaBall
                 currentSize,
                 new Size(safeSize, safeSize),
                 workArea);
-            Left = resizedPosition.X;
-            Top = resizedPosition.Y;
-            AppSettings.SavePosition(Left, Top);
+            SetOrbOrigin(resizedPosition);
+            AppSettings.SavePosition(resizedPosition.X, resizedPosition.Y);
             if (save)
             {
                 AppSettings.SaveAppearance(safeSize, color);
             }
             if (detail.IsVisible)
             {
-                detail.PositionBeside(this);
+                detail.PositionBeside(this, GetOrbScreenBounds());
             }
         }
 
@@ -706,7 +766,7 @@ namespace CodexQuotaBall
             detail.UpdateSnapshot(snapshot);
             detail.UpdateConnection(connectionText, connected);
             detail.Show();
-            detail.PositionBeside(this);
+            detail.PositionBeside(this, GetOrbScreenBounds());
             detail.Activate();
         }
 
@@ -731,32 +791,55 @@ namespace CodexQuotaBall
             double savedTop;
             if (AppSettings.TryLoadPosition(out savedLeft, out savedTop))
             {
-                Left = savedLeft;
-                Top = savedTop;
+                SetOrbOrigin(new Point(savedLeft, savedTop));
                 ClampToWorkArea();
                 return;
             }
 
             Rect workArea = SystemParameters.WorkArea;
-            Left = workArea.Right - Width - 22.0;
-            Top = workArea.Top + workArea.Height * 0.38;
+            SetOrbOrigin(new Point(
+                workArea.Right - appearance.Size - 22.0,
+                workArea.Top + workArea.Height * 0.38));
         }
 
         private void ClampAndSavePosition()
         {
             ClampToWorkArea();
-            AppSettings.SavePosition(Left, Top);
+            Point orbOrigin = GetOrbOrigin();
+            AppSettings.SavePosition(orbOrigin.X, orbOrigin.Y);
         }
 
         private void ClampToWorkArea()
         {
             Rect workArea = GetWorkArea();
-            Point position = BallPositioning.ClampToWorkArea(
+            Point position = OrbWindowMetrics.ClampWindowOriginByOrb(
                 new Point(Left, Top),
-                new Size(Width, Height),
+                appearance.Size,
                 workArea);
             Left = position.X;
             Top = position.Y;
+        }
+
+        private Point GetOrbOrigin()
+        {
+            return OrbWindowMetrics.OrbOriginFromWindowOrigin(
+                new Point(Left, Top),
+                appearance.Size);
+        }
+
+        private void SetOrbOrigin(Point orbOrigin)
+        {
+            Point windowOrigin = OrbWindowMetrics.WindowOriginFromOrbOrigin(
+                orbOrigin,
+                appearance.Size);
+            Left = windowOrigin.X;
+            Top = windowOrigin.Y;
+        }
+
+        private Rect GetOrbScreenBounds()
+        {
+            Point origin = GetOrbOrigin();
+            return new Rect(origin, new Size(appearance.Size, appearance.Size));
         }
 
         private Rect GetWorkArea()

@@ -1,22 +1,30 @@
 import Foundation
 
 public struct RealtimeRetryPolicy: Sendable {
-    public static let fallbackFailureThreshold = 3
-    public static let initialDelay = 2.0
-    public static let maximumDelay = 30.0
+    public static let restartRetryCount = 3
+    public static let fallbackFailureThreshold = restartRetryCount + 1
+    public static let fallbackRetryDelay = 30.0
+    private static let restartRetryDelays = [5.0, 10.0, 15.0]
 
     public private(set) var consecutiveFailures = 0
 
     public init() {}
 
-    public mutating func recordFailure() -> (delay: TimeInterval, useLocalFallback: Bool) {
+    public mutating func recordFailure() -> (
+        delay: TimeInterval,
+        retryAttempt: Int,
+        useLocalFallback: Bool
+    ) {
         consecutiveFailures += 1
-        let exponent = max(0, consecutiveFailures - 1)
-        let delay = min(
-            Self.maximumDelay,
-            Self.initialDelay * pow(2, Double(exponent))
+        let useLocalFallback = consecutiveFailures >= Self.fallbackFailureThreshold
+        let delay = useLocalFallback
+            ? Self.fallbackRetryDelay
+            : Self.restartRetryDelays[consecutiveFailures - 1]
+        return (
+            delay,
+            useLocalFallback ? 0 : consecutiveFailures,
+            useLocalFallback
         )
-        return (delay, consecutiveFailures >= Self.fallbackFailureThreshold)
     }
 
     public mutating func recordSuccess() {
