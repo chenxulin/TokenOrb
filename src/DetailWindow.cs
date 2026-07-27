@@ -13,7 +13,8 @@ namespace CodexQuotaBall
     {
         private readonly TextBlock titleText;
         private readonly TextBlock remainingText;
-        private readonly TextBlock resetText;
+        private readonly TextBlock resetDateText;
+        private readonly TextBlock resetCountdownText;
         private readonly QuotaBar bar;
 
         public QuotaWindowRow()
@@ -50,16 +51,24 @@ namespace CodexQuotaBall
 
             Grid resetContent = new Grid();
             resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(9) });
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            resetContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             TextBlock resetLabel = CreateText(10.0, FontWeights.Normal, Color.FromRgb(92, 102, 110));
             resetLabel.Text = "下轮重置";
-            resetText = CreateText(10.5, FontWeights.SemiBold, Color.FromRgb(56, 103, 130));
-            resetText.TextTrimming = TextTrimming.CharacterEllipsis;
-            Grid.SetColumn(resetText, 2);
+            resetDateText = CreateText(10.0, FontWeights.SemiBold, Color.FromRgb(56, 103, 130));
+            resetDateText.TextTrimming = TextTrimming.CharacterEllipsis;
+            Grid.SetColumn(resetDateText, 2);
+            resetCountdownText = CreateText(10.0, FontWeights.SemiBold, Color.FromRgb(56, 103, 130));
+            resetCountdownText.HorizontalAlignment = HorizontalAlignment.Right;
+            resetCountdownText.TextAlignment = TextAlignment.Right;
+            resetCountdownText.TextTrimming = TextTrimming.CharacterEllipsis;
+            Grid.SetColumn(resetCountdownText, 4);
             resetContent.Children.Add(resetLabel);
-            resetContent.Children.Add(resetText);
+            resetContent.Children.Add(resetDateText);
+            resetContent.Children.Add(resetCountdownText);
 
             Border resetPanel = new Border
             {
@@ -92,7 +101,9 @@ namespace CodexQuotaBall
             remainingText.Foreground = UiPalette.Brush(accent);
             bar.RemainingPercent = remaining;
             bar.AccentColor = accent;
-            resetText.Text = QuotaFormatting.FormatReset(window);
+            DateTimeOffset now = DateTimeOffset.Now;
+            resetDateText.Text = QuotaFormatting.FormatResetDate(window, now);
+            resetCountdownText.Text = QuotaFormatting.FormatResetCountdown(window, now);
         }
 
         private static TextBlock CreateText(double size, FontWeight weight, Color color)
@@ -117,6 +128,7 @@ namespace CodexQuotaBall
         private readonly TextBlock creditsValue;
         private readonly TextBlock planValue;
         private readonly TextBlock sourceValue;
+        private readonly TextBlock capturedAtValue;
         private QuotaSnapshot snapshot;
         private string connectionText = "正在连接";
         private bool connected;
@@ -254,22 +266,29 @@ namespace CodexQuotaBall
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Padding = new Thickness(2, 10, 2, 0)
             };
-            StackPanel footerContent = new StackPanel();
+            Grid footerContent = new Grid();
+            footerContent.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+            footerContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             sourceValue = new TextBlock
             {
                 Foreground = UiPalette.Brush(UiPalette.Muted),
                 FontSize = 10.5,
-                TextWrapping = TextWrapping.Wrap
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
             };
             footerContent.Children.Add(sourceValue);
-            footerContent.Children.Add(new TextBlock
+            capturedAtValue = new TextBlock
             {
-                    Text = "只调用本机 Codex；auth.json 仅用于内存身份指纹，不保存登录凭据",
-                Foreground = UiPalette.Brush(Color.FromRgb(117, 149, 168)),
-                FontSize = 9.5,
-                Margin = new Thickness(0, 4, 0, 0),
-                TextWrapping = TextWrapping.Wrap
-            });
+                Foreground = UiPalette.Brush(UiPalette.Muted),
+                FontSize = 10.5,
+                TextAlignment = TextAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(capturedAtValue, 1);
+            footerContent.Children.Add(capturedAtValue);
             footer.Child = footerContent;
             content.Children.Add(footer);
 
@@ -313,6 +332,7 @@ namespace CodexQuotaBall
                 creditsValue.Text = "—";
                 planValue.Text = "—";
                 sourceValue.Text = "等待 Codex 额度数据…";
+                capturedAtValue.Text = String.Empty;
                 return;
             }
 
@@ -320,8 +340,8 @@ namespace CodexQuotaBall
             secondaryRow.UpdateValue(snapshot.Secondary);
             creditsValue.Text = QuotaFormatting.FormatCredits(snapshot.Credits);
             planValue.Text = QuotaFormatting.FormatPlan(snapshot.PlanType);
-            sourceValue.Text = "数据：" + (snapshot.Source ?? "Codex")
-                + " · " + QuotaFormatting.FormatCapturedAt(snapshot);
+            sourceValue.Text = "数据来源：" + QuotaFormatting.FormatDataSource(snapshot);
+            capturedAtValue.Text = QuotaFormatting.FormatCapturedAt(snapshot);
         }
 
         public void UpdateConnection(string text, bool isConnected)

@@ -145,11 +145,61 @@ func checkFormatting() {
     expect(QuotaFormatting.planName("pro") == "ChatGPT Pro", "Pro plan label")
     expect(QuotaFormatting.planName("business") == "ChatGPT Business", "Business plan label")
     expect(QuotaFormatting.planName("edu") == "ChatGPT Edu", "Edu plan label")
+    expect(QuotaFormatting.credits(nil) == "0", "missing additional credits label")
+    expect(
+        QuotaFormatting.credits(QuotaCredits(hasCredits: false)) == "0",
+        "disabled additional credits label"
+    )
+
+    let capturedAt = Date(timeIntervalSince1970: 1_798_854_245)
+    let liveSnapshot = QuotaSnapshot(
+        capturedAt: capturedAt,
+        source: "Codex 实时接口",
+        isLive: true
+    )
+    let localSnapshot = QuotaSnapshot(
+        capturedAt: capturedAt,
+        source: "本地会话快照",
+        isLive: false
+    )
+    expect(QuotaFormatting.dataSource(liveSnapshot) == "实时数据", "live data source label")
+    expect(QuotaFormatting.dataSource(localSnapshot) == "本地快照", "local snapshot label")
+    let capturedFormatter = DateFormatter()
+    capturedFormatter.locale = Locale(identifier: "zh_CN")
+    capturedFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    expect(
+        QuotaFormatting.capturedAtText(liveSnapshot) == capturedFormatter.string(from: capturedAt),
+        "capture timestamp should include the local year and seconds"
+    )
+
     let now = Date(timeIntervalSince1970: 2_000_000_000)
     let reset = QuotaWindow(resetsAt: now.addingTimeInterval(125))
     expect(
-        QuotaFormatting.resetText(reset, now: now).hasPrefix("2分 5秒后"),
+        QuotaFormatting.resetCountdownText(reset, now: now) == "2分5秒后",
         "sub-hour reset text should include seconds"
+    )
+
+    let isoFormatter = ISO8601DateFormatter()
+    let staleWeeklyReset = isoFormatter.date(from: "2026-12-28T08:00:00Z")!
+    let crossYearNow = isoFormatter.date(from: "2026-12-31T16:00:00Z")!
+    let weeklyWindow = QuotaWindow(
+        windowMinutes: 10_080,
+        resetsAt: staleWeeklyReset
+    )
+    let expectedWeeklyReset = staleWeeklyReset.addingTimeInterval(7 * 86_400)
+    expect(
+        QuotaFormatting.resolvedReset(weeklyWindow, now: crossYearNow) == expectedWeeklyReset,
+        "expired weekly reset should advance by exactly seven days across the year"
+    )
+    expect(
+        QuotaFormatting.resetDateText(weeklyWindow, now: crossYearNow)
+            == capturedFormatter.string(from: expectedWeeklyReset),
+        "reset timestamp should use the full resolved local date"
+    )
+    expect(
+        QuotaFormatting.resetCountdownText(weeklyWindow, now: crossYearNow)
+            == "3天16小时后",
+        "weekly countdown should remain separate from the reset date"
     )
     expect(QuotaFormatting.roundedPercent(12.5) == 12, "percentage midpoint rounds to even")
     expect(QuotaFormatting.roundedPercent(13.5) == 14, "percentage midpoint rounds to even up")

@@ -14,7 +14,8 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
     private let secondaryCard = QuotaCardView()
     private let creditsValue = NSTextField(labelWithString: "待补充")
     private let planValue = NSTextField(labelWithString: "待补充")
-    private let footerLabel = NSTextField(labelWithString: "等待额度数据")
+    private let sourceLabel = NSTextField(labelWithString: "等待额度数据")
+    private let capturedAtLabel = NSTextField(labelWithString: "")
     private var snapshot: QuotaSnapshot?
     private(set) var lastAutoDismissedAt = Date.distantPast
 
@@ -68,19 +69,18 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         planValue.stringValue = snapshot.map { QuotaFormatting.planName($0.planType) } ?? "—"
 
         if let snapshot {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "zh_CN")
-            formatter.dateFormat = "MM-dd HH:mm:ss"
-            footerLabel.stringValue = "数据：\(snapshot.source) · \(formatter.string(from: snapshot.capturedAt))"
+            sourceLabel.stringValue = "数据来源：\(QuotaFormatting.dataSource(snapshot))"
+            capturedAtLabel.stringValue = QuotaFormatting.capturedAtText(snapshot)
         } else {
-            footerLabel.stringValue = "等待 Codex 额度数据…"
+            sourceLabel.stringValue = "等待 Codex 额度数据…"
+            capturedAtLabel.stringValue = ""
         }
 
         let visibleCards = [snapshot?.primary, snapshot?.secondary]
             .compactMap { $0 }
             .filter { $0.usedPercent != nil }
             .count
-        window?.setContentSize(NSSize(width: 344, height: CGFloat(224 + visibleCards * 104)))
+        window?.setContentSize(NSSize(width: 344, height: CGFloat(192 + visibleCards * 104)))
     }
 
     func refreshTimeLabels(now: Date = Date()) {
@@ -207,23 +207,24 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         infoGrid.column(at: 1).xPlacement = .trailing
         infoCard.addSubview(infoGrid)
 
-        footerLabel.textColor = .secondaryLabelColor
-        footerLabel.font = .systemFont(ofSize: 11)
-        footerLabel.lineBreakMode = .byTruncatingMiddle
-
-        let privacyLabel = NSTextField(
-            wrappingLabelWithString: "只调用本机 Codex；auth.json 仅用于内存身份指纹，不保存登录凭据"
-        )
-        privacyLabel.textColor = .tertiaryLabelColor
-        privacyLabel.font = .systemFont(ofSize: 10.5)
+        [sourceLabel, capturedAtLabel].forEach {
+            $0.textColor = .secondaryLabelColor
+            $0.font = .systemFont(ofSize: 11)
+        }
+        sourceLabel.lineBreakMode = .byTruncatingTail
+        sourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        capturedAtLabel.alignment = .right
+        capturedAtLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let footerRow = NSStackView(views: [sourceLabel, NSView(), capturedAtLabel])
+        footerRow.orientation = .horizontal
+        footerRow.alignment = .centerY
 
         let stack = NSStackView(views: [
             titleRow,
             primaryCard,
             secondaryCard,
             infoCard,
-            footerLabel,
-            privacyLabel,
+            footerRow,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -244,8 +245,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
             infoGrid.leadingAnchor.constraint(equalTo: infoCard.leadingAnchor, constant: 16),
             infoGrid.trailingAnchor.constraint(equalTo: infoCard.trailingAnchor, constant: -16),
             infoGrid.centerYAnchor.constraint(equalTo: infoCard.centerYAnchor),
-            footerLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            privacyLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            footerRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
     }
 
@@ -258,7 +258,8 @@ private final class QuotaCardView: NSView {
     private let titleLabel = NSTextField(labelWithString: "额度")
     private let remainingLabel = NSTextField(labelWithString: "剩余 —")
     private let progress = QuotaBarView()
-    private let resetLabel = NSTextField(labelWithString: "重置时间未知")
+    private let resetDateLabel = NSTextField(labelWithString: "时间未知")
+    private let resetCountdownLabel = NSTextField(labelWithString: "")
     private var quotaWindow: QuotaWindow?
 
     override init(frame frameRect: NSRect) {
@@ -283,15 +284,29 @@ private final class QuotaCardView: NSView {
         remainingLabel.font = .systemFont(ofSize: 16, weight: .bold)
         remainingLabel.textColor = .systemGreen
         remainingLabel.alignment = .right
-        resetLabel.font = .systemFont(ofSize: 10.5, weight: .semibold)
-        resetLabel.textColor = NSColor(srgbRed: 56 / 255, green: 103 / 255, blue: 130 / 255, alpha: 1)
+        [resetDateLabel, resetCountdownLabel].forEach {
+            $0.font = .systemFont(ofSize: 10.5, weight: .semibold)
+            $0.textColor = NSColor(
+                srgbRed: 56 / 255,
+                green: 103 / 255,
+                blue: 130 / 255,
+                alpha: 1
+            )
+        }
+        resetCountdownLabel.alignment = .right
+        resetCountdownLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let resetTitle = NSTextField(labelWithString: "下轮重置")
         resetTitle.font = .systemFont(ofSize: 10)
         resetTitle.textColor = NSColor(srgbRed: 92 / 255, green: 102 / 255, blue: 110 / 255, alpha: 1)
-        let resetRow = NSStackView(views: [resetTitle, resetLabel])
+        let resetRow = NSStackView(views: [
+            resetTitle,
+            resetDateLabel,
+            NSView(),
+            resetCountdownLabel,
+        ])
         resetRow.orientation = .horizontal
-        resetRow.spacing = 9
+        resetRow.spacing = 6
         resetRow.alignment = .centerY
         resetRow.translatesAutoresizingMaskIntoConstraints = false
 
@@ -314,7 +329,7 @@ private final class QuotaCardView: NSView {
         resetPanel.addSubview(resetRow)
         NSLayoutConstraint.activate([
             resetRow.leadingAnchor.constraint(equalTo: resetPanel.leadingAnchor, constant: 8),
-            resetRow.trailingAnchor.constraint(lessThanOrEqualTo: resetPanel.trailingAnchor, constant: -8),
+            resetRow.trailingAnchor.constraint(equalTo: resetPanel.trailingAnchor, constant: -8),
             resetRow.centerYAnchor.constraint(equalTo: resetPanel.centerYAnchor),
         ])
 
@@ -361,12 +376,14 @@ private final class QuotaCardView: NSView {
             remainingLabel.textColor = .secondaryLabelColor
             progress.remainingPercent = 0
             progress.accentColor = .systemBlue
-            resetLabel.stringValue = "重置时间未知"
+            resetDateLabel.stringValue = "时间未知"
+            resetCountdownLabel.stringValue = ""
         }
     }
 
     func refreshReset(now: Date = Date()) {
-        resetLabel.stringValue = QuotaFormatting.resetText(quotaWindow, now: now)
+        resetDateLabel.stringValue = QuotaFormatting.resetDateText(quotaWindow, now: now)
+        resetCountdownLabel.stringValue = QuotaFormatting.resetCountdownText(quotaWindow, now: now)
     }
 
     private func quotaColor(remaining: Double) -> NSColor {

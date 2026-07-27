@@ -426,15 +426,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(refresh)
         menu.addItem(item("个性化外观", action: #selector(showAppearance)))
 
-        let toggleOrb = item("显示/隐藏悬浮球", action: #selector(toggleOrb))
+        let toggleOrb = item("显示悬浮球", action: #selector(toggleOrb))
         toggleOrb.tag = MenuTag.toggleOrb.rawValue
         menu.addItem(toggleOrb)
 
-        let follow = item("跟随 Codex 启动/退出", action: #selector(toggleFollowCodex))
-        follow.tag = MenuTag.followCodex.rawValue
-        menu.addItem(follow)
-
         if includeAbout {
+            let follow = item("跟随 Codex 启动/退出", action: #selector(toggleFollowCodex))
+            follow.tag = MenuTag.followCodex.rawValue
+            menu.addItem(follow)
             menu.addItem(item("关于", action: #selector(showAbout)))
         }
         menu.addItem(item("退出", action: #selector(quit)))

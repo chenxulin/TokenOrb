@@ -11,44 +11,94 @@ namespace CodexQuotaBall
 {
     public static class QuotaFormatting
     {
-        public static string FormatReset(QuotaWindowInfo window)
+        private const int WeeklyWindowMinutes = 7 * 24 * 60;
+        private static readonly TimeSpan WeeklyResetInterval = TimeSpan.FromDays(7.0);
+
+        public static DateTimeOffset? ResolveResetAt(
+            QuotaWindowInfo window,
+            DateTimeOffset now)
         {
             if (window == null || !window.ResetsAtUnix.HasValue)
             {
-                return "重置时间未知";
+                return null;
             }
 
-            DateTimeOffset reset = UnixTime.ToDateTimeOffset(window.ResetsAtUnix.Value).ToLocalTime();
-            TimeSpan remaining = reset - DateTimeOffset.Now;
-            string countdown;
+            DateTimeOffset resetUtc = UnixTime
+                .ToDateTimeOffset(window.ResetsAtUnix.Value)
+                .ToUniversalTime();
+            DateTimeOffset nowUtc = now.ToUniversalTime();
+            if (window.WindowMinutes == WeeklyWindowMinutes && resetUtc <= nowUtc)
+            {
+                long elapsedTicks = (nowUtc - resetUtc).Ticks;
+                long cycles = elapsedTicks / WeeklyResetInterval.Ticks + 1L;
+                try
+                {
+                    resetUtc = resetUtc.AddTicks(checked(cycles * WeeklyResetInterval.Ticks));
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    return resetUtc.ToLocalTime();
+                }
+                catch (OverflowException)
+                {
+                    return resetUtc.ToLocalTime();
+                }
+            }
+
+            return resetUtc.ToLocalTime();
+        }
+
+        public static string FormatResetDate(
+            QuotaWindowInfo window,
+            DateTimeOffset now)
+        {
+            DateTimeOffset? reset = ResolveResetAt(window, now);
+            return reset.HasValue
+                ? reset.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+                : "时间未知";
+        }
+
+        public static string FormatResetCountdown(
+            QuotaWindowInfo window,
+            DateTimeOffset now)
+        {
+            DateTimeOffset? reset = ResolveResetAt(window, now);
+            if (!reset.HasValue)
+            {
+                return String.Empty;
+            }
+
+            TimeSpan remaining = reset.Value - now.ToLocalTime();
             if (remaining.TotalSeconds <= 0)
             {
-                countdown = "等待 Codex 刷新";
+                return "等待 Codex 刷新";
             }
-            else if (remaining.TotalDays >= 1.0)
+            if (remaining.TotalDays >= 1.0)
             {
-                countdown = ((int)remaining.TotalDays).ToString(CultureInfo.InvariantCulture)
-                    + "天 " + remaining.Hours.ToString(CultureInfo.InvariantCulture) + "小时后";
+                return ((int)remaining.TotalDays).ToString(CultureInfo.InvariantCulture)
+                    + "天"
+                    + remaining.Hours.ToString(CultureInfo.InvariantCulture)
+                    + "小时后";
             }
-            else if (remaining.TotalHours >= 1.0)
+            if (remaining.TotalHours >= 1.0)
             {
-                countdown = ((int)remaining.TotalHours).ToString(CultureInfo.InvariantCulture)
-                    + "小时 " + remaining.Minutes.ToString(CultureInfo.InvariantCulture) + "分后";
-            }
-            else
-            {
-                countdown = Math.Max(0, remaining.Minutes).ToString(CultureInfo.InvariantCulture)
-                    + "分 " + Math.Max(0, remaining.Seconds).ToString(CultureInfo.InvariantCulture) + "秒后";
+                return ((int)remaining.TotalHours).ToString(CultureInfo.InvariantCulture)
+                    + "小时"
+                    + remaining.Minutes.ToString(CultureInfo.InvariantCulture)
+                    + "分后";
             }
 
-            return countdown + " · " + reset.ToString("MM-dd HH:mm", CultureInfo.CurrentCulture);
+            return Math.Max(0, remaining.Minutes).ToString(CultureInfo.InvariantCulture)
+                + "分"
+                + Math.Max(0, remaining.Seconds).ToString(CultureInfo.InvariantCulture)
+                + "秒后";
         }
 
         public static string FormatCredits(QuotaCreditsInfo credits)
         {
             if (credits == null || (credits.HasCredits.HasValue && !credits.HasCredits.Value))
             {
-                return "未启用";
+                return "0";
             }
             if (credits.Unlimited.HasValue && credits.Unlimited.Value)
             {
@@ -92,7 +142,14 @@ namespace CodexQuotaBall
             {
                 return "尚未更新";
             }
-            return snapshot.CapturedAt.ToLocalTime().ToString("MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
+            return snapshot.CapturedAt.ToLocalTime().ToString(
+                "yyyy-MM-dd HH:mm:ss",
+                CultureInfo.CurrentCulture);
+        }
+
+        public static string FormatDataSource(QuotaSnapshot snapshot)
+        {
+            return snapshot != null && snapshot.IsLive ? "实时数据" : "本地快照";
         }
     }
 

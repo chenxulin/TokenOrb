@@ -237,7 +237,7 @@ namespace CodexQuotaBall
             bool followCodexEnabled,
             bool codexRunning)
         {
-            return followCodexEnabled && codexRunning;
+            return !followCodexEnabled || codexRunning;
         }
     }
 }

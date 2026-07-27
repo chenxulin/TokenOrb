@@ -160,6 +160,9 @@ public struct QuotaSnapshot: Equatable, Sendable {
 }
 
 public enum QuotaFormatting {
+    private static let weeklyWindowMinutes = 7 * 24 * 60
+    private static let weeklyResetInterval: TimeInterval = 7 * 24 * 60 * 60
+
     public static func roundedPercent(_ value: Double) -> Int {
         Int(value.rounded(.toNearestOrEven))
     }
@@ -182,29 +185,45 @@ public enum QuotaFormatting {
         }
     }
 
-    public static func resetText(_ window: QuotaWindow?, now: Date = Date()) -> String {
-        guard let reset = window?.resetsAt else { return "重置时间未知" }
+    public static func resolvedReset(_ window: QuotaWindow?, now: Date = Date()) -> Date? {
+        guard var reset = window?.resetsAt else { return nil }
+        if window?.windowMinutes == weeklyWindowMinutes, reset <= now {
+            let elapsed = now.timeIntervalSince(reset)
+            let cycles = floor(elapsed / weeklyResetInterval) + 1
+            reset = reset.addingTimeInterval(cycles * weeklyResetInterval)
+        }
+        return reset
+    }
+
+    public static func resetDateText(_ window: QuotaWindow?, now: Date = Date()) -> String {
+        guard let reset = resolvedReset(window, now: now) else { return "时间未知" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: reset)
+    }
+
+    public static func resetCountdownText(
+        _ window: QuotaWindow?,
+        now: Date = Date()
+    ) -> String {
+        guard let reset = resolvedReset(window, now: now) else { return "" }
         let remaining = reset.timeIntervalSince(now)
         let days = Int(remaining) / 86_400
         let hours = (Int(remaining) % 86_400) / 3_600
         let minutes = (Int(remaining) % 3_600) / 60
         let seconds = Int(remaining) % 60
 
-        let relative: String
         if remaining <= 0 {
-            relative = "等待 Codex 刷新"
-        } else if remaining >= 86_400 {
-            relative = "\(days)天 \(hours)小时后"
-        } else if remaining >= 3_600 {
-            relative = "\(hours)小时 \(minutes)分后"
-        } else {
-            relative = "\(max(0, minutes))分 \(max(0, seconds))秒后"
+            return "等待 Codex 刷新"
         }
-
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "MM-dd HH:mm"
-        return "\(relative) · \(formatter.string(from: reset))"
+        if remaining >= 86_400 {
+            return "\(days)天\(hours)小时后"
+        }
+        if remaining >= 3_600 {
+            return "\(hours)小时\(minutes)分后"
+        }
+        return "\(max(0, minutes))分\(max(0, seconds))秒后"
     }
 
     public static func planName(_ plan: String?) -> String {
@@ -230,7 +249,7 @@ public enum QuotaFormatting {
     }
 
     public static func credits(_ value: QuotaCredits?) -> String {
-        guard let value, value.hasCredits != false else { return "未启用" }
+        guard let value, value.hasCredits != false else { return "0" }
         if value.unlimited == true {
             return "无限"
         }
@@ -245,5 +264,17 @@ public enum QuotaFormatting {
         formatter.maximumFractionDigits = 2
         formatter.minimumFractionDigits = 2
         return formatter.string(from: number as NSDecimalNumber) ?? balance
+    }
+
+    public static func dataSource(_ snapshot: QuotaSnapshot?) -> String {
+        snapshot?.isLive == true ? "实时数据" : "本地快照"
+    }
+
+    public static func capturedAtText(_ snapshot: QuotaSnapshot?) -> String {
+        guard let snapshot else { return "尚未更新" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: snapshot.capturedAt)
     }
 }

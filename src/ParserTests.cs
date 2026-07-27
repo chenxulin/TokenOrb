@@ -28,6 +28,7 @@ namespace CodexQuotaBall
                 TestAppIdentity();
                 TestWindowSwitcherVisibility();
                 TestDetailWindowDismissKeys();
+                TestQuotaFormatting();
                 TestQuotaText();
                 TestQuotaTextStyles();
                 TestAnimationFrameRate();
@@ -329,6 +330,79 @@ namespace CodexQuotaBall
                 "Other keys should keep the detail card open");
         }
 
+        private static void TestQuotaFormatting()
+        {
+            Assert(QuotaFormatting.FormatCredits(null) == "0",
+                "Missing additional credits should display zero");
+            Assert(QuotaFormatting.FormatCredits(new QuotaCreditsInfo { HasCredits = false }) == "0",
+                "Disabled additional credits should display zero");
+            Assert(QuotaFormatting.FormatPlan("pro") == "ChatGPT Pro",
+                "Pro plans should keep the ChatGPT product prefix");
+
+            QuotaSnapshot live = new QuotaSnapshot
+            {
+                IsLive = true,
+                CapturedAt = new DateTimeOffset(2027, 1, 2, 3, 4, 5, TimeSpan.Zero)
+            };
+            QuotaSnapshot local = new QuotaSnapshot { IsLive = false };
+            Assert(QuotaFormatting.FormatDataSource(live) == "实时数据",
+                "Live snapshots should use the realtime data label");
+            Assert(QuotaFormatting.FormatDataSource(local) == "本地快照",
+                "Fallback snapshots should use the local snapshot label");
+            Assert(
+                QuotaFormatting.FormatCapturedAt(live)
+                    == live.CapturedAt.ToLocalTime().ToString(
+                        "yyyy-MM-dd HH:mm:ss",
+                        CultureInfo.CurrentCulture),
+                "Capture time should include the local year and seconds");
+
+            DateTimeOffset staleWeeklyReset = new DateTimeOffset(
+                2026,
+                12,
+                28,
+                8,
+                0,
+                0,
+                TimeSpan.Zero);
+            DateTimeOffset now = new DateTimeOffset(
+                2026,
+                12,
+                31,
+                16,
+                0,
+                0,
+                TimeSpan.Zero);
+            QuotaWindowInfo weeklyWindow = new QuotaWindowInfo
+            {
+                WindowMinutes = 10080,
+                ResetsAtUnix = Convert.ToInt64(
+                    (staleWeeklyReset - new DateTimeOffset(
+                        1970,
+                        1,
+                        1,
+                        0,
+                        0,
+                        0,
+                        TimeSpan.Zero)).TotalSeconds,
+                    CultureInfo.InvariantCulture)
+            };
+            DateTimeOffset expectedReset = staleWeeklyReset.AddDays(7.0);
+            DateTimeOffset? resolvedReset = QuotaFormatting.ResolveResetAt(weeklyWindow, now);
+            Assert(resolvedReset.HasValue, "Weekly reset should resolve");
+            Assert(resolvedReset.Value.ToUniversalTime() == expectedReset,
+                "Expired weekly reset should advance by exactly seven days");
+            Assert(resolvedReset.Value.Year == expectedReset.ToLocalTime().Year,
+                "Cross-year reset should use the resolved reset date year");
+            Assert(
+                QuotaFormatting.FormatResetDate(weeklyWindow, now)
+                    == expectedReset.ToLocalTime().ToString(
+                        "yyyy-MM-dd HH:mm:ss",
+                        CultureInfo.CurrentCulture),
+                "Reset date should include the full resolved local date and seconds");
+            Assert(QuotaFormatting.FormatResetCountdown(weeklyWindow, now) == "3天16小时后",
+                "Weekly reset countdown should be separate and right-alignable");
+        }
+
         private static void TestFollowCodexStartupDefaults()
         {
             Assert(FollowCodexStartupBehavior.ShouldCreateDefaultPreference(false, false),
@@ -367,8 +441,10 @@ namespace CodexQuotaBall
                 "Tray icon should be visible while Codex is open");
             Assert(!WatcherTrayBehavior.ShouldShowTrayIcon(true, false),
                 "Tray icon should leave the notification area when Codex closes");
-            Assert(!WatcherTrayBehavior.ShouldShowTrayIcon(false, true),
-                "Disabled follow mode should not expose a watcher tray icon");
+            Assert(WatcherTrayBehavior.ShouldShowTrayIcon(false, true),
+                "Disabled follow mode should keep its tray settings available");
+            Assert(WatcherTrayBehavior.ShouldShowTrayIcon(false, false),
+                "Disabled follow mode should expose the tray even while Codex is closed");
         }
 
         private static void TestWaveColors()

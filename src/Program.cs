@@ -40,7 +40,7 @@ namespace CodexQuotaBall
                 catch (Exception exception) { AppSettings.LogError(exception); }
             }
             if (!demoMode && !manualUi
-                && (watcherMode || (!companionUi && AppSettings.IsFollowCodexEnabled())))
+                && (watcherMode || !companionUi))
             {
                 try { AppSettings.EnsureFollowCodexRegistration(); }
                 catch (Exception exception) { AppSettings.LogError(exception); }
@@ -160,11 +160,6 @@ namespace CodexQuotaBall
                 using (EventWaitHandle uiHide = AppSettings.CreateUiHideEvent())
                 using (EventWaitHandle uiVisible = AppSettings.CreateUiVisibleStateEvent())
                 {
-                    if (!AppSettings.IsFollowCodexEnabled())
-                    {
-                        return;
-                    }
-
                     Forms.Application.EnableVisualStyles();
                     using (WatcherTrayContext context = new WatcherTrayContext(
                         exit,
@@ -271,6 +266,7 @@ namespace CodexQuotaBall
             private readonly EventWaitHandle uiVisible;
             private readonly Forms.ContextMenuStrip menu;
             private readonly Forms.ToolStripMenuItem orbItem;
+            private readonly Forms.ToolStripMenuItem followCodexItem;
             private readonly Forms.NotifyIcon notifyIcon;
             private readonly Forms.Timer timer;
             private readonly Drawing.Icon icon;
@@ -293,13 +289,17 @@ namespace CodexQuotaBall
                 this.uiHide = uiHide;
                 this.uiVisible = uiVisible;
 
-                orbItem = new Forms.ToolStripMenuItem("显示/隐藏悬浮球");
+                orbItem = new Forms.ToolStripMenuItem("显示悬浮球");
                 orbItem.CheckOnClick = false;
                 orbItem.Padding = new Forms.Padding(8, 5, 12, 5);
                 // ContextMenuStrip adds its own bottom inset but lays the first
                 // item directly against the top. Balance the visible whitespace.
                 orbItem.Margin = new Forms.Padding(0, 5, 0, 0);
                 orbItem.Click += delegate { ToggleOrb(); };
+                followCodexItem = new Forms.ToolStripMenuItem("跟随 Codex 启动/退出");
+                followCodexItem.CheckOnClick = false;
+                followCodexItem.Padding = new Forms.Padding(8, 5, 12, 5);
+                followCodexItem.Click += delegate { ToggleFollowCodex(); };
                 Forms.ToolStripMenuItem exitItem = new Forms.ToolStripMenuItem("退出");
                 exitItem.Padding = new Forms.Padding(8, 5, 12, 5);
                 exitItem.Click += delegate { ExitFromTray(); };
@@ -317,6 +317,7 @@ namespace CodexQuotaBall
                 menu.ShowCheckMargin = true;
                 menu.Renderer = new TokenOrbMenuRenderer();
                 menu.Items.Add(orbItem);
+                menu.Items.Add(followCodexItem);
                 menu.Items.Add(aboutItem);
                 menu.Items.Add(exitItem);
                 menu.Opening += delegate
@@ -366,7 +367,7 @@ namespace CodexQuotaBall
                     return;
                 }
 
-                if (watcherExit.WaitOne(0) || !AppSettings.IsFollowCodexEnabled())
+                if (watcherExit.WaitOne(0))
                 {
                     ExitWatcherNow();
                     return;
@@ -379,6 +380,7 @@ namespace CodexQuotaBall
             {
                 try
                 {
+                    bool followCodexEnabled = AppSettings.IsFollowCodexEnabled();
                     codexRunning = CodexProcessMonitor.IsCodexDesktopRunning();
                     manuallyHiddenForCurrentCodexSession =
                         WatcherTrayBehavior.ShouldKeepManualHideSuppressed(
@@ -392,11 +394,11 @@ namespace CodexQuotaBall
                     }
 
                     SetTrayIconVisible(WatcherTrayBehavior.ShouldShowTrayIcon(
-                        true,
+                        followCodexEnabled,
                         codexRunning));
 
                     if (WatcherTrayBehavior.ShouldStopOrb(
-                        true,
+                        followCodexEnabled,
                         codexRunning,
                         uiRunning,
                         IsLaunchPending))
@@ -405,7 +407,7 @@ namespace CodexQuotaBall
                     }
                     else if (!IsLaunchPending
                         && WatcherTrayBehavior.ShouldAutoStartOrb(
-                            true,
+                            followCodexEnabled,
                             codexRunning,
                             uiRunning,
                             manuallyHiddenForCurrentCodexSession))
@@ -419,6 +421,35 @@ namespace CodexQuotaBall
                 }
 
                 RefreshMenuState();
+            }
+
+            private void ToggleFollowCodex()
+            {
+                if (exiting)
+                {
+                    return;
+                }
+
+                bool enabled = !AppSettings.IsFollowCodexEnabled();
+                try
+                {
+                    AppSettings.SetFollowCodexEnabled(enabled);
+                    if (enabled)
+                    {
+                        manuallyHiddenForCurrentCodexSession = false;
+                    }
+                    UpdateCodexLifecycle();
+                }
+                catch (Exception exception)
+                {
+                    AppSettings.LogError(exception);
+                    Forms.MessageBox.Show(
+                        "无法更新 Codex 跟随设置：" + exception.Message,
+                        AppIdentity.ProductName,
+                        Forms.MessageBoxButtons.OK,
+                        Forms.MessageBoxIcon.Warning);
+                    RefreshMenuState();
+                }
             }
 
             private void StopOrbForCodex()
@@ -613,6 +644,8 @@ namespace CodexQuotaBall
                 bool pending = IsLaunchPending;
                 orbItem.Checked = visible;
                 orbItem.Enabled = !exiting && !pending;
+                followCodexItem.Checked = AppSettings.IsFollowCodexEnabled();
+                followCodexItem.Enabled = !exiting;
                 notifyIcon.Text = visible
                     ? AppIdentity.ProductName + " - 悬浮球运行中"
                     : running

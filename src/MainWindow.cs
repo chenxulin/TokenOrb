@@ -368,7 +368,7 @@ namespace CodexQuotaBall
 
             MenuItem visibilityItem = new MenuItem
             {
-                Header = "显示/隐藏悬浮球",
+                Header = "显示悬浮球",
                 IsCheckable = true,
                 IsChecked = IsOrbVisible
             };
@@ -391,45 +391,6 @@ namespace CodexQuotaBall
             };
             menu.Opened += delegate { visibilityItem.IsChecked = IsOrbVisible; };
             menu.Items.Add(visibilityItem);
-
-            MenuItem followCodexItem = new MenuItem
-            {
-                Header = "跟随 Codex 启动/退出",
-                IsCheckable = true,
-                IsChecked = demoMode ? false : AppSettings.IsFollowCodexEnabled(),
-                IsEnabled = !demoMode
-            };
-            followCodexItem.Click += delegate
-            {
-                try
-                {
-                    AppSettings.SetFollowCodexEnabled(followCodexItem.IsChecked);
-                    followCodexEnabled = followCodexItem.IsChecked;
-                    if (followCodexEnabled)
-                    {
-                        companionUi = true;
-                        AppSettings.StartWatcherProcess();
-                        OnCodexRunningChanged(processMonitor.CheckNow());
-                    }
-                    else
-                    {
-                        companionUi = false;
-                        AppSettings.SignalWatcherExit();
-                        ActivateForCodex();
-                    }
-                }
-                catch (Exception exception)
-                {
-                    AppSettings.LogError(exception);
-                    followCodexItem.IsChecked = !followCodexItem.IsChecked;
-                    MessageBox.Show(
-                        "无法更新 Codex 跟随设置：" + exception.Message,
-                        AppIdentity.ProductName,
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                }
-            };
-            menu.Items.Add(followCodexItem);
 
             MenuItem exitItem = new MenuItem { Header = "退出" };
             exitItem.Click += delegate
@@ -527,6 +488,10 @@ namespace CodexQuotaBall
 
         private void OnCodexRunningChanged(bool running)
         {
+            if (!demoMode)
+            {
+                followCodexEnabled = AppSettings.IsFollowCodexEnabled();
+            }
             if (!loaded || demoMode || manualUi || !followCodexEnabled)
             {
                 return;
