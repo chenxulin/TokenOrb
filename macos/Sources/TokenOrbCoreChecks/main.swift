@@ -156,9 +156,9 @@ func checkFormatting() {
 }
 
 func checkAppIdentity() {
-    expect(AppIdentity.productName == "Token Orb", "product name")
-    expect(AppIdentity.displayVersion == "v1.5.1", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.1", "protocol version")
+    expect(AppIdentity.productName == "TokenOrb", "product name")
+    expect(AppIdentity.displayVersion == "v1.5.2", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.2", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 
@@ -198,8 +198,194 @@ func checkAuthStateTracker() {
 }
 
 func checkOrbVisualMetrics() {
+    expect(OrbVisualMetrics.defaultDiameter == 65, "default orb diameter")
     expect(OrbVisualMetrics.minimumDiameter == 24, "minimum orb diameter")
     expect(OrbVisualMetrics.maximumDiameter == 160, "maximum orb diameter")
+    expect(
+        OrbAppearanceDefaults.accentHex == "#2FA4EB"
+            && OrbAppearanceDefaults.textStyle == .condensed
+            && OrbAppearanceDefaults.animationFrameRate == 60,
+        "fresh installations should use the release appearance defaults"
+    )
+    expect(
+        OrbVisualMetrics.animationFramesPerSecond == 60,
+        "water-wave animation should target 60 FPS"
+    )
+    expect(
+        OrbVisualMetrics.supportedAnimationFrameRates == [30, 60, 90, 120, 180],
+        "appearance settings should expose all supported animation frame rates"
+    )
+    expect(
+        OrbVisualMetrics.normalizedAnimationFrameRate(180) == 180,
+        "supported high frame rates should be preserved"
+    )
+    expect(
+        OrbVisualMetrics.normalizedAnimationFrameRate(144) == 60,
+        "unknown frame rates should safely fall back to 60 FPS"
+    )
+    expect(
+        abs(OrbVisualMetrics.animationInterval(frameRate: 120) - 1.0 / 120.0)
+            < 0.000_001,
+        "selected frame rate should determine the animation interval"
+    )
+    expect(
+        abs(OrbVisualMetrics.animationInterval - 1.0 / 60.0) < 0.000_001,
+        "water-wave fallback clock should use a 60 FPS interval"
+    )
+    expect(
+        abs(OrbVisualMetrics.wavePhaseRadiansPerSecond * 0.040 - 0.15) < 0.000_001,
+        "water-wave angular velocity should preserve the previous animation speed"
+    )
+    expect(
+        OrbVisualMetrics.backWavePhaseRadiansPerSecond < 0,
+        "the background wave should move independently in the opposite direction"
+    )
+    let fullCycle = Double.pi * 2
+    let frontBeforeWrap = fullCycle - 0.001
+    let frontElapsed = 0.001
+    let frontUnwrapped = frontBeforeWrap
+        + OrbVisualMetrics.wavePhaseRadiansPerSecond * frontElapsed
+    let frontAfterWrap = OrbVisualMetrics.advancedLoopingPhase(
+        phase: frontBeforeWrap,
+        radiansPerSecond: OrbVisualMetrics.wavePhaseRadiansPerSecond,
+        elapsedSeconds: frontElapsed
+    )
+    expect(
+        abs(sin(frontUnwrapped) - sin(frontAfterWrap)) < 0.000_001,
+        "the foreground wave should cross the 2π seam without a visual jump"
+    )
+    let backBeforeWrap = 0.001
+    let backElapsed = 0.001
+    let backUnwrapped = backBeforeWrap
+        + OrbVisualMetrics.backWavePhaseRadiansPerSecond * backElapsed
+    let backAfterWrap = OrbVisualMetrics.advancedLoopingPhase(
+        phase: backBeforeWrap,
+        radiansPerSecond: OrbVisualMetrics.backWavePhaseRadiansPerSecond,
+        elapsedSeconds: backElapsed
+    )
+    expect(
+        abs(sin(backUnwrapped) - sin(backAfterWrap)) < 0.000_001,
+        "the background wave should cross the zero seam without a visual jump"
+    )
+    for frameRate in OrbVisualMetrics.supportedAnimationFrameRates {
+        let elapsed = 1.0 / Double(frameRate)
+        var frontPhase = 0.0
+        var backPhase = OrbVisualMetrics.backWaveInitialPhase
+        var previousFrontSample = OrbVisualMetrics.waveSurfaceSample(
+            progress: 0.37,
+            phase: frontPhase,
+            cycles: 1.42
+        )
+        var previousBackSample = OrbVisualMetrics.waveSurfaceSample(
+            progress: 0.63,
+            phase: backPhase,
+            cycles: 1.20
+        )
+        var maximumFrontStep = 0.0
+        var maximumBackStep = 0.0
+        for _ in 0..<(frameRate * 120) {
+            frontPhase = OrbVisualMetrics.advancedLoopingPhase(
+                phase: frontPhase,
+                radiansPerSecond: OrbVisualMetrics.wavePhaseRadiansPerSecond,
+                elapsedSeconds: elapsed
+            )
+            backPhase = OrbVisualMetrics.advancedLoopingPhase(
+                phase: backPhase,
+                radiansPerSecond: OrbVisualMetrics.backWavePhaseRadiansPerSecond,
+                elapsedSeconds: elapsed
+            )
+            let frontSample = OrbVisualMetrics.waveSurfaceSample(
+                progress: 0.37,
+                phase: frontPhase,
+                cycles: 1.42
+            )
+            let backSample = OrbVisualMetrics.waveSurfaceSample(
+                progress: 0.63,
+                phase: backPhase,
+                cycles: 1.20
+            )
+            maximumFrontStep = max(
+                maximumFrontStep,
+                abs(frontSample - previousFrontSample)
+            )
+            maximumBackStep = max(
+                maximumBackStep,
+                abs(backSample - previousBackSample)
+            )
+            previousFrontSample = frontSample
+            previousBackSample = backSample
+        }
+        expect(
+            maximumFrontStep
+                <= abs(OrbVisualMetrics.wavePhaseRadiansPerSecond) * elapsed + 0.000_001,
+            "foreground wave continuity at \(frameRate) FPS"
+        )
+        expect(
+            maximumBackStep
+                <= abs(OrbVisualMetrics.backWavePhaseRadiansPerSecond) * elapsed + 0.000_001,
+            "background wave continuity at \(frameRate) FPS"
+        )
+    }
+    expect(
+        abs(OrbVisualMetrics.animationElapsedSeconds(
+            previousTimestamp: 1,
+            currentTimestamp: 1 + 1.0 / 120.0
+        ) - 1.0 / 120.0) < 0.000_001,
+        "display-synchronized animation should preserve high-refresh frame timing"
+    )
+    expect(
+        OrbVisualMetrics.animationElapsedSeconds(previousTimestamp: 1, currentTimestamp: 2)
+            == OrbVisualMetrics.maximumAnimationDelta,
+        "animation should cap long frame gaps to prevent visible jumps"
+    )
+    expect(
+        OrbVisualMetrics.animationElapsedSeconds(
+            previousTimestamp: nil,
+            currentTimestamp: 1
+        ) == OrbVisualMetrics.animationInterval,
+        "first frame should use the 60 FPS fallback interval"
+    )
+    expect(OrbVisualMetrics.defaultTrailingMargin == 22, "Windows default trailing margin")
+    expect(OrbVisualMetrics.defaultTopOffsetRatio == 0.38, "Windows default top offset")
+    expect(
+        OrbAppearancePresets.all.map { $0.hex } == [
+            "#2FA4EB",
+            "#31BE91",
+            "#8D83F6",
+            "#4D8DF7",
+            "#F49A6A",
+            "#EA718C",
+        ],
+        "appearance presets should match Windows RGB values"
+    )
+    expect(
+        OrbTextStyle.allCases.map(\.rawValue) == [
+            "minimal",
+            "geometric",
+            "condensed",
+            "rounded",
+            "emphasis",
+        ],
+        "text style storage values should match Windows"
+    )
+    expect(
+        OrbTextStyle(storedValue: nil) == .minimal,
+        "legacy appearance settings should use the minimal text style"
+    )
+    expect(
+        OrbTextStyle(storedValue: "future-style") == .minimal,
+        "unknown text styles should safely fall back"
+    )
+    expect(
+        OrbTextStyle.allCases.map(\.displayName) == [
+            "Wing",
+            "Aureole",
+            "Spear",
+            "Pearl",
+            "Thunder",
+        ],
+        "text styles should expose their user-facing names"
+    )
     expect(
         abs(OrbVisualMetrics.previewWidth / OrbVisualMetrics.previewHeight - 16.0 / 9.0)
             < 0.000_001,
@@ -209,6 +395,26 @@ func checkOrbVisualMetrics() {
     let previewOffset = OrbVisualMetrics.previewOffset(diameter: 60)
     expect(previewOffset.x == 130, "orb should be horizontally centered in system preview")
     expect(previewOffset.y == 60, "orb should be vertically centered in system preview")
+    expect(
+        OrbVisualMetrics.appearancePreviewDiameter(configuredDiameter: 24) == 54,
+        "small configured orbs should retain a legible appearance preview"
+    )
+    expect(
+        OrbVisualMetrics.appearancePreviewDiameter(configuredDiameter: 60) == 60,
+        "mid-sized configured orbs should use their actual appearance preview size"
+    )
+    expect(
+        OrbVisualMetrics.appearancePreviewDiameter(configuredDiameter: 160) == 82,
+        "large configured orbs should fit inside the appearance preview card"
+    )
+    expect(
+        !OrbVisualMetrics.shouldTreatAsDrag(deltaX: 3, deltaY: 0),
+        "movement below the Windows click threshold should remain a click"
+    )
+    expect(
+        OrbVisualMetrics.shouldTreatAsDrag(deltaX: 2, deltaY: 2),
+        "movement at the Windows drag threshold should start a drag"
+    )
     expect(OrbVisualMetrics.tone(remaining: nil) == .waiting, "waiting tone")
     expect(OrbVisualMetrics.tone(remaining: 21) == .healthy, "healthy threshold")
     expect(OrbVisualMetrics.tone(remaining: 20) == .warning, "warning threshold")
@@ -352,6 +558,14 @@ func checkOrbRuntimePolicy() {
             codexRunning: true
         ),
         "new Codex session should clear manual hide"
+    )
+    expect(
+        OrbRuntimePolicy.shouldResetManualHide(
+            followCodex: true,
+            wasCodexRunning: true,
+            codexRunning: false
+        ),
+        "ending a Codex session should clear manual hide"
     )
 }
 

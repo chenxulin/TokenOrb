@@ -1,8 +1,8 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -34,6 +34,13 @@ namespace CodexQuotaBall
 
         private const int WindowMessageNonClientHitTest = 0x0084;
         private const int HitTestTransparent = -1;
+        private const int ExtendedWindowStyleIndex = -20;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr windowHandle, int index);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr windowHandle, int index, int value);
 
         public event Action<bool> OrbVisibilityChanged;
 
@@ -48,7 +55,11 @@ namespace CodexQuotaBall
             this.companionUi = companionUi;
             this.manualUi = manualUi;
             appearance = AppSettings.LoadAppearance();
+#if QA
+            Title = AppIdentity.ProductName + " QA 演示";
+#else
             Title = AppIdentity.ProductName;
+#endif
             Width = OrbWindowMetrics.PreviewWidth;
             Height = OrbWindowMetrics.PreviewHeight;
             MinWidth = OrbWindowMetrics.PreviewWidth;
@@ -69,9 +80,13 @@ namespace CodexQuotaBall
             WindowStartupLocation = WindowStartupLocation.Manual;
 
             ball = new QuotaBallVisual();
-            ball.SetAppearance(appearance.Size, appearance.AccentColor);
+            ball.SetAppearance(
+                appearance.Size,
+                appearance.AccentColor,
+                appearance.TextStyle,
+                appearance.AnimationFrameRate);
             AutomationProperties.SetName(ball, "Codex 剩余额度");
-            ball.SetState(null, false, connectionText);
+            ball.SetState(null, false);
             ball.ContextMenu = CreateContextMenu();
             ball.HorizontalAlignment = HorizontalAlignment.Center;
             ball.VerticalAlignment = VerticalAlignment.Center;
@@ -102,14 +117,12 @@ namespace CodexQuotaBall
             secondTimer.Tick += delegate
             {
                 detail.RefreshTimeLabels();
-                ball.SetState(snapshot, connected, connectionText);
-                UpdateToolTip();
+                ball.SetState(snapshot, connected);
             };
 
             Loaded += OnLoaded;
             SourceInitialized += OnSourceInitialized;
             Closed += OnClosed;
-            Deactivated += OnDeactivated;
             MouseLeftButtonDown += OnMouseLeftButtonDown;
         }
 
@@ -178,7 +191,25 @@ namespace CodexQuotaBall
             windowSource = PresentationSource.FromVisual(this) as HwndSource;
             if (windowSource != null)
             {
+#if !QA
+                HideFromWindowSwitcher(windowSource.Handle);
+#endif
                 windowSource.AddHook(OnWindowMessage);
+            }
+        }
+
+        private static void HideFromWindowSwitcher(IntPtr windowHandle)
+        {
+            if (windowHandle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            int currentStyle = GetWindowLong(windowHandle, ExtendedWindowStyleIndex);
+            int hiddenStyle = WindowSwitcherVisibilityPolicy.HideFromSwitcher(currentStyle);
+            if (hiddenStyle != currentStyle)
+            {
+                SetWindowLong(windowHandle, ExtendedWindowStyleIndex, hiddenStyle);
             }
         }
 
@@ -215,30 +246,46 @@ namespace CodexQuotaBall
             return IntPtr.Zero;
         }
 
-        private void OnDeactivated(object sender, EventArgs args)
+        protected override void OnContextMenuOpening(ContextMenuEventArgs args)
         {
-            ContextMenu menu = ball.ContextMenu;
-            if (menu != null && menu.IsOpen)
+            // ContextMenu raises this event before creating its Popup.  Make the
+            // orb the foreground window first so WPF's built-in mouse capture can
+            // receive clicks outside the Popup, including clicks in other apps.
+            // A background window's SetCapture is limited to its visible bounds.
+            if (!args.Handled && !IsActive)
             {
-                menu.IsOpen = false;
+                try
+                {
+                    if (!Activate())
+                    {
+                        args.Handled = true;
+                        AppSettings.LogError(new InvalidOperationException(
+                            "Unable to activate the orb before opening its context menu."));
+                    }
+                }
+                catch (Exception exception)
+                {
+                    args.Handled = true;
+                    AppSettings.LogError(exception);
+                }
             }
+
+            base.OnContextMenuOpening(args);
         }
 
         private void OnSnapshotChanged(QuotaSnapshot value)
         {
             snapshot = value;
-            ball.SetState(snapshot, connected, connectionText);
+            ball.SetState(snapshot, connected);
             detail.UpdateSnapshot(snapshot);
-            UpdateToolTip();
         }
 
         private void OnConnectionChanged(string text, bool isConnected)
         {
             connectionText = text;
             connected = isConnected;
-            ball.SetState(snapshot, connected, connectionText);
+            ball.SetState(snapshot, connected);
             detail.UpdateConnection(connectionText, connected);
-            UpdateToolTip();
         }
 
         private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs args)
@@ -296,9 +343,8 @@ namespace CodexQuotaBall
                 Template = CreateContextMenuTemplate()
             };
             menu.Resources[typeof(MenuItem)] = CreateMenuItemStyle();
-            menu.Resources[typeof(Separator)] = CreateSeparatorStyle();
 
-            MenuItem detailsItem = new MenuItem { Header = "查看详细额度" };
+            MenuItem detailsItem = new MenuItem { Header = "查看额度" };
             detailsItem.Click += delegate { ToggleDetail(); };
             menu.Items.Add(detailsItem);
 
@@ -307,7 +353,7 @@ namespace CodexQuotaBall
             {
                 connectionText = "正在刷新…";
                 connected = false;
-                ball.SetState(snapshot, connected, connectionText);
+                ball.SetState(snapshot, connected);
                 detail.UpdateConnection(connectionText, connected);
                 if (service != null)
                 {
@@ -316,7 +362,7 @@ namespace CodexQuotaBall
             };
             menu.Items.Add(refreshItem);
 
-            MenuItem appearanceItem = new MenuItem { Header = "外观" };
+            MenuItem appearanceItem = new MenuItem { Header = "个性化外观" };
             appearanceItem.Click += delegate { OpenAppearanceWindow(); };
             menu.Items.Add(appearanceItem);
 
@@ -345,11 +391,10 @@ namespace CodexQuotaBall
             };
             menu.Opened += delegate { visibilityItem.IsChecked = IsOrbVisible; };
             menu.Items.Add(visibilityItem);
-            menu.Items.Add(new Separator());
 
             MenuItem followCodexItem = new MenuItem
             {
-                Header = "跟随 Codex 启动/关闭",
+                Header = "跟随 Codex 启动/退出",
                 IsCheckable = true,
                 IsChecked = demoMode ? false : AppSettings.IsFollowCodexEnabled(),
                 IsEnabled = !demoMode
@@ -386,11 +431,6 @@ namespace CodexQuotaBall
             };
             menu.Items.Add(followCodexItem);
 
-            MenuItem aboutItem = new MenuItem { Header = "关于" };
-            aboutItem.Click += delegate { OpenAboutWindow(); };
-            menu.Items.Add(aboutItem);
-            menu.Items.Add(new Separator());
-
             MenuItem exitItem = new MenuItem { Header = "退出" };
             exitItem.Click += delegate
             {
@@ -403,6 +443,7 @@ namespace CodexQuotaBall
 
         private void OpenAppearanceWindow()
         {
+            bool restoreTopmost = Topmost;
             try
             {
                 if (detail.IsVisible)
@@ -410,12 +451,18 @@ namespace CodexQuotaBall
                     detail.Hide();
                 }
 
+                Topmost = false;
                 AppearanceWindow window = new AppearanceWindow(appearance);
                 window.Owner = this;
                 bool? accepted = window.ShowDialog();
                 if (accepted == true)
                 {
-                    ApplyAppearance(window.SelectedSize, window.SelectedColor, true);
+                    ApplyAppearance(
+                        window.SelectedSize,
+                        window.SelectedColor,
+                        window.SelectedTextStyle,
+                        window.SelectedAnimationFrameRate,
+                        true);
                 }
             }
             catch (Exception exception)
@@ -427,33 +474,18 @@ namespace CodexQuotaBall
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
-        }
-
-        private void OpenAboutWindow()
-        {
-            try
+            finally
             {
-                if (detail.IsVisible)
-                {
-                    detail.Hide();
-                }
-
-                AboutWindow window = new AboutWindow();
-                window.Owner = this;
-                window.ShowDialog();
-            }
-            catch (Exception exception)
-            {
-                AppSettings.LogError(exception);
-                MessageBox.Show(
-                    "无法打开关于页面：" + exception.Message,
-                    AppIdentity.ProductName,
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                Topmost = restoreTopmost;
             }
         }
 
-        private void ApplyAppearance(double size, Color color, bool save)
+        private void ApplyAppearance(
+            double size,
+            Color color,
+            QuotaTextStyle textStyle,
+            int animationFrameRate,
+            bool save)
         {
             double safeSize = Math.Round(Math.Max(
                 QuotaBallVisual.MinimumDiameter,
@@ -461,8 +493,16 @@ namespace CodexQuotaBall
             Rect workArea = GetWorkArea();
             Point currentPosition = GetOrbOrigin();
             Size currentSize = new Size(appearance.Size, appearance.Size);
-            ball.SetAppearance(safeSize, color);
-            appearance = new BallAppearanceSettings { Size = safeSize, AccentColor = color };
+            QuotaTextStyle safeTextStyle = QuotaTextStyleCatalog.Normalize(textStyle);
+            int safeFrameRate = AnimationFrameRateCatalog.Normalize(animationFrameRate);
+            ball.SetAppearance(safeSize, color, safeTextStyle, safeFrameRate);
+            appearance = new BallAppearanceSettings
+            {
+                Size = safeSize,
+                AccentColor = color,
+                TextStyle = safeTextStyle,
+                AnimationFrameRate = safeFrameRate
+            };
 
             Point resizedPosition = BallPositioning.PreserveCenterOnResize(
                 currentPosition,
@@ -473,7 +513,11 @@ namespace CodexQuotaBall
             AppSettings.SavePosition(resizedPosition.X, resizedPosition.Y);
             if (save)
             {
-                AppSettings.SaveAppearance(safeSize, color);
+                AppSettings.SaveAppearance(
+                    safeSize,
+                    color,
+                    safeTextStyle,
+                    safeFrameRate);
             }
             if (detail.IsVisible)
             {
@@ -573,7 +617,7 @@ namespace CodexQuotaBall
 
             connectionText = "正在连接 Codex…";
             connected = false;
-            ball.SetState(snapshot, connected, connectionText);
+            ball.SetState(snapshot, connected);
             detail.UpdateConnection(connectionText, connected);
 
             service = new QuotaService(Dispatcher, demoMode);
@@ -596,10 +640,9 @@ namespace CodexQuotaBall
             snapshot = null;
             connected = false;
             connectionText = "等待 Codex 启动…";
-            ball.SetState(snapshot, connected, connectionText);
+            ball.SetState(snapshot, connected);
             detail.UpdateSnapshot(null);
             detail.UpdateConnection(connectionText, false);
-            UpdateToolTip();
         }
 
         private static ControlTemplate CreateContextMenuTemplate()
@@ -729,22 +772,6 @@ namespace CodexQuotaBall
             return style;
         }
 
-        private static Style CreateSeparatorStyle()
-        {
-            Style style = new Style(typeof(Separator));
-            style.Setters.Add(new Setter(Control.OverridesDefaultStyleProperty, true));
-            style.Setters.Add(new Setter(FrameworkElement.HeightProperty, 9.0));
-
-            ControlTemplate template = new ControlTemplate(typeof(Separator));
-            FrameworkElementFactory line = new FrameworkElementFactory(typeof(Border));
-            line.SetValue(Border.HeightProperty, 1.0);
-            line.SetValue(Border.MarginProperty, new Thickness(8, 4, 8, 4));
-            line.SetValue(Border.BackgroundProperty, UiPalette.Brush(Color.FromRgb(198, 229, 245)));
-            template.VisualTree = line;
-            style.Setters.Add(new Setter(Control.TemplateProperty, template));
-            return style;
-        }
-
         private void ToggleDetail()
         {
             if (!loaded)
@@ -768,21 +795,6 @@ namespace CodexQuotaBall
             detail.Show();
             detail.PositionBeside(this, GetOrbScreenBounds());
             detail.Activate();
-        }
-
-        private void UpdateToolTip()
-        {
-            QuotaWindowInfo limiting = snapshot == null ? null : snapshot.MostRestrictiveWindow;
-            if (limiting == null)
-            {
-                ball.ToolTip = connectionText + "\n点击查看详情，右键打开菜单";
-                return;
-            }
-
-            ball.ToolTip = "Codex " + QuotaSnapshot.FormatWindowName(limiting)
-                + "剩余 " + Math.Round(limiting.RemainingPercent).ToString("0") + "%\n"
-                + QuotaFormatting.FormatReset(limiting) + "\n"
-                + connectionText + " · 点击查看详情";
         }
 
         private void RestorePosition()

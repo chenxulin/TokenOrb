@@ -3,12 +3,28 @@ import Foundation
 import ServiceManagement
 import TokenOrbCore
 
+enum LoginItemUpdateResult {
+    case enabled
+    case disabled
+    case requiresApproval
+}
+
+private enum LoginItemUpdateError: LocalizedError {
+    case registrationDidNotComplete
+
+    var errorDescription: String? {
+        "TokenOrb 登录项注册未完成，请确认应用位于 Applications 文件夹后重试。"
+    }
+}
+
 final class AppSettings {
     static let shared = AppSettings()
 
     private enum Key {
         static let orbSize = "orbSize"
         static let accentHex = "accentHex"
+        static let textStyle = "textStyle"
+        static let animationFrameRate = "animationFrameRate"
         static let followCodex = "followCodex"
         static let orbOriginX = "orbOriginX"
         static let orbOriginY = "orbOriginY"
@@ -18,8 +34,10 @@ final class AppSettings {
 
     private init() {
         defaults.register(defaults: [
-            Key.orbSize: 60.0,
-            Key.accentHex: "#2FA4EB",
+            Key.orbSize: OrbAppearanceDefaults.size,
+            Key.accentHex: OrbAppearanceDefaults.accentHex,
+            Key.textStyle: OrbAppearanceDefaults.textStyle.rawValue,
+            Key.animationFrameRate: OrbAppearanceDefaults.animationFrameRate,
             Key.followCodex: true,
         ])
     }
@@ -42,16 +60,36 @@ final class AppSettings {
     }
 
     var accentColor: NSColor {
-        get { NSColor(hex: defaults.string(forKey: Key.accentHex) ?? "#2FA4EB") }
+        get {
+            NSColor(
+                hex: defaults.string(forKey: Key.accentHex)
+                    ?? OrbAppearanceDefaults.accentHex
+            )
+        }
         set { defaults.set(newValue.hexString, forKey: Key.accentHex) }
     }
 
-    var followCodex: Bool {
-        get { defaults.bool(forKey: Key.followCodex) }
-        set {
-            defaults.set(newValue, forKey: Key.followCodex)
-            updateLoginItem(enabled: newValue)
+    var textStyle: OrbTextStyle {
+        get { OrbTextStyle(storedValue: defaults.string(forKey: Key.textStyle)) }
+        set { defaults.set(newValue.rawValue, forKey: Key.textStyle) }
+    }
+
+    var animationFrameRate: Int {
+        get {
+            OrbVisualMetrics.normalizedAnimationFrameRate(
+                defaults.integer(forKey: Key.animationFrameRate)
+            )
         }
+        set {
+            defaults.set(
+                OrbVisualMetrics.normalizedAnimationFrameRate(newValue),
+                forKey: Key.animationFrameRate
+            )
+        }
+    }
+
+    var followCodex: Bool {
+        defaults.bool(forKey: Key.followCodex)
     }
 
     var savedOrbOrigin: NSPoint? {
@@ -72,19 +110,58 @@ final class AppSettings {
         defaults.set(origin.y, forKey: Key.orbOriginY)
     }
 
-    func updateLoginItem(enabled: Bool) {
-        guard #available(macOS 13.0, *) else { return }
-        do {
-            if enabled, SMAppService.mainApp.status != .enabled {
-                try SMAppService.mainApp.register()
-            } else if !enabled, SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            // Registration can fail for an unbundled development executable.
-            // The packaged app retries the next time the preference changes.
-            AppLogger.shared.error(error)
+    @discardableResult
+    func setFollowCodex(_ enabled: Bool) throws -> LoginItemUpdateResult {
+        let result = try updateLoginItem(enabled: enabled)
+        defaults.set(enabled, forKey: Key.followCodex)
+        return result
+    }
+
+    @discardableResult
+    func updateLoginItem(enabled: Bool) throws -> LoginItemUpdateResult {
+        guard #available(macOS 13.0, *) else {
+            return enabled ? .enabled : .disabled
         }
+
+        let service = SMAppService.mainApp
+        if enabled {
+            switch service.status {
+            case .enabled:
+                return .enabled
+            case .requiresApproval:
+                return .requiresApproval
+            case .notRegistered, .notFound:
+                try service.register()
+            @unknown default:
+                try service.register()
+            }
+
+            switch service.status {
+            case .enabled:
+                return .enabled
+            case .requiresApproval:
+                return .requiresApproval
+            case .notRegistered, .notFound:
+                throw LoginItemUpdateError.registrationDidNotComplete
+            @unknown default:
+                throw LoginItemUpdateError.registrationDidNotComplete
+            }
+        }
+
+        switch service.status {
+        case .enabled, .requiresApproval:
+            try service.unregister()
+        case .notRegistered, .notFound:
+            break
+        @unknown default:
+            try service.unregister()
+        }
+        return .disabled
+    }
+
+    func openLoginItemSettings() {
+        guard #available(macOS 13.0, *) else { return }
+        SMAppService.openSystemSettingsLoginItems()
     }
 }
 
@@ -120,7 +197,7 @@ extension NSColor {
             let rgb = usingColorSpace(.sRGB),
             rgb.numberOfComponents >= 3
         else {
-            return "#2FA4EB"
+            return OrbAppearanceDefaults.accentHex
         }
         return String(
             format: "#%02X%02X%02X",

@@ -1,20 +1,20 @@
 using System.Reflection;
 
-[assembly: AssemblyTitle("Token Orb")]
-[assembly: AssemblyProduct("Token Orb")]
+[assembly: AssemblyTitle("TokenOrb")]
+[assembly: AssemblyProduct("TokenOrb")]
 [assembly: AssemblyCompany("chenxulin")]
 [assembly: AssemblyCopyright("Copyright © chenxulin")]
-[assembly: AssemblyVersion("1.5.1.0")]
-[assembly: AssemblyFileVersion("1.5.1.0")]
+[assembly: AssemblyVersion("1.5.2.0")]
+[assembly: AssemblyFileVersion("1.5.2.0")]
 
 namespace CodexQuotaBall
 {
     public static class AppIdentity
     {
-        public const string ProductName = "Token Orb";
+        public const string ProductName = "TokenOrb";
         public const string ExecutableFileName = "TokenOrb.exe";
-        public const string DisplayVersion = "v1.5.1";
-        public const string ProtocolVersion = "1.5.1";
+        public const string DisplayVersion = "v1.5.2";
+        public const string ProtocolVersion = "1.5.2";
         public const string Publisher = "chenxulin";
         public const string ReleaseDateText = "发布于 2026年7月25日";
     }

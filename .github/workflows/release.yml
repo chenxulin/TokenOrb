@@ -139,4 +139,4 @@ jobs:
             "release-assets/TokenOrb-macOS.sha256" \
             --verify-tag \
             --notes-file RELEASE_NOTES.md \
-            --title "Token Orb $GITHUB_REF_NAME"
+            --title "TokenOrb $GITHUB_REF_NAME"

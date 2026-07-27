@@ -41,7 +41,7 @@ namespace CodexQuotaBall
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 22)
             };
-            AutomationProperties.SetName(logo, "Token Orb 图标");
+            AutomationProperties.SetName(logo, AppIdentity.ProductName + " 图标");
             identity.Children.Add(logo);
 
             identity.Children.Add(CreateCenteredText(

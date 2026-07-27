@@ -1,9 +1,15 @@
 import AppKit
 import TokenOrbCore
 
+private final class EscapeClosingPanel: NSPanel {
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(nil)
+    }
+}
+
 final class AboutWindowController: NSWindowController {
     init() {
-        let panel = NSPanel(
+        let panel = EscapeClosingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 452),
             styleMask: [.titled, .closable],
             backing: .buffered,
@@ -34,7 +40,7 @@ final class AboutWindowController: NSWindowController {
 
         let logo = TokenOrbLogoView()
         logo.translatesAutoresizingMaskIntoConstraints = false
-        logo.setAccessibilityLabel("Token Orb 图标")
+        logo.setAccessibilityLabel("\(AppIdentity.productName) 图标")
 
         let name = label(AppIdentity.productName, size: 22, weight: .semibold, color: .labelColor)
         let powered = label("Powered by Codex", size: 14, color: .secondaryLabelColor)

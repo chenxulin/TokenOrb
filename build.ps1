@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$productName = "Token Orb"
+$productName = "TokenOrb"
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path (Split-Path -Parent (Split-Path -Parent $projectRoot)) "outputs"
@@ -299,6 +299,7 @@ $testArguments = @(
     (Join-Path $sourceDirectory "RealtimeRetryPolicy.cs"),
     (Join-Path $sourceDirectory "BallPositioning.cs"),
     (Join-Path $sourceDirectory "UiControls.cs"),
+    (Join-Path $sourceDirectory "UiHelpers.cs"),
     (Join-Path $sourceDirectory "FollowCodexStartupBehavior.cs"),
     (Join-Path $sourceDirectory "CodexProcessMonitor.cs"),
     (Join-Path $sourceDirectory "ParserTests.cs")
