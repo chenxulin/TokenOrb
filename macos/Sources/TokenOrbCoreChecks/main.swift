@@ -215,8 +215,8 @@ func checkAppIdentity() {
         AppIdentity.watcherBundleIdentifier == "com.chenxulin.TokenOrb.Watcher",
         "watcher bundle identifier"
     )
-    expect(AppIdentity.displayVersion == "v1.5.2", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.2", "protocol version")
+    expect(AppIdentity.displayVersion == "v1.5.3", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.3", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 

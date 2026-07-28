@@ -17,6 +17,7 @@ namespace CodexQuotaBall
     {
         private readonly QuotaBallVisual ball;
         private readonly DetailWindow detail;
+        private AppearanceWindow appearanceWindow;
         private readonly bool demoMode;
         private readonly CodexProcessMonitor processMonitor;
         private readonly DispatcherTimer secondTimer;
@@ -404,7 +405,24 @@ namespace CodexQuotaBall
 
         private void OpenAppearanceWindow()
         {
-            bool restoreTopmost = Topmost;
+            AppearanceWindow openWindow = appearanceWindow;
+            if (openWindow != null)
+            {
+                try
+                {
+                    if (openWindow.WindowState == WindowState.Minimized)
+                    {
+                        openWindow.WindowState = WindowState.Normal;
+                    }
+                    openWindow.Activate();
+                }
+                catch (Exception exception)
+                {
+                    ReportAppearanceError("无法激活外观设置：", exception);
+                }
+                return;
+            }
+
             try
             {
                 if (detail.IsVisible)
@@ -412,33 +430,67 @@ namespace CodexQuotaBall
                     detail.Hide();
                 }
 
-                Topmost = false;
+                // Keep this window unowned and modeless. An owned window follows
+                // the topmost orb's Z-order and would stay above other apps.
                 AppearanceWindow window = new AppearanceWindow(appearance);
-                window.Owner = this;
-                bool? accepted = window.ShowDialog();
-                if (accepted == true)
-                {
-                    ApplyAppearance(
-                        window.SelectedSize,
-                        window.SelectedColor,
-                        window.SelectedTextStyle,
-                        window.SelectedAnimationFrameRate,
-                        true);
-                }
+                window.Closed += OnAppearanceWindowClosed;
+                appearanceWindow = window;
+                window.Show();
             }
             catch (Exception exception)
             {
-                AppSettings.LogError(exception);
-                MessageBox.Show(
-                    "无法打开外观设置：" + exception.Message,
-                    AppIdentity.ProductName,
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                AppearanceWindow failedWindow = appearanceWindow;
+                appearanceWindow = null;
+                if (failedWindow != null)
+                {
+                    failedWindow.Closed -= OnAppearanceWindowClosed;
+                    try { failedWindow.Close(); } catch { }
+                }
+                ReportAppearanceError("无法打开外观设置：", exception);
             }
-            finally
+        }
+
+        private void OnAppearanceWindowClosed(object sender, EventArgs args)
+        {
+            AppearanceWindow window = sender as AppearanceWindow;
+            if (window == null)
             {
-                Topmost = restoreTopmost;
+                return;
             }
+
+            window.Closed -= OnAppearanceWindowClosed;
+            if (ReferenceEquals(appearanceWindow, window))
+            {
+                appearanceWindow = null;
+            }
+            if (!window.WasAccepted)
+            {
+                return;
+            }
+
+            try
+            {
+                ApplyAppearance(
+                    window.SelectedSize,
+                    window.SelectedColor,
+                    window.SelectedTextStyle,
+                    window.SelectedAnimationFrameRate,
+                    true);
+            }
+            catch (Exception exception)
+            {
+                ReportAppearanceError("无法保存外观设置：", exception);
+            }
+        }
+
+        private static void ReportAppearanceError(string prefix, Exception exception)
+        {
+            AppSettings.LogError(exception);
+            MessageBox.Show(
+                prefix + exception.Message,
+                AppIdentity.ProductName,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
 
         private void ApplyAppearance(

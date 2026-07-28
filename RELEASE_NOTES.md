@@ -1,4 +1,14 @@
-# TokenOrb v1.5.2 发布说明
+# TokenOrb v1.5.3 发布说明
+
+## 2026-07-28 v1.5.3 更新
+
+- macOS 应用包、系统进程和安装显示名称统一为 `TokenOrb`，应用包更名为 `TokenOrb.app`。
+- 新增嵌套轻量 watcher：Codex 启动时拉起 TokenOrb 主应用，Codex 退出后主应用进程同步退出。
+- 等待 Codex 时由 watcher 保留菜单栏入口，并提供立即检查、重新打开和诊断日志入口。
+- 使用 `NSWorkspace` 启动/退出通知即时检测，保留 2 秒扫描兜底，并记录 Codex 候选进程与状态变化。
+- 精确 Bundle ID `com.openai.codex` 不再受 Activation Policy 限制，避免 LaunchServices 状态导致误判。
+- Windows 外观设置改为可从任务栏切换的非模态独立窗口；重复打开时激活现有窗口，不再被置顶悬浮球压在其他应用之上。
+- 更新 Windows 界面截图，并补充未公证 macOS 应用的首次放行步骤。
 
 ## 2026-07-27 补充更新
 
@@ -44,8 +54,8 @@
 
 ### macOS
 
-- 下载 `TokenOrb-macOS.dmg`，打开后将 `Token Orb.app` 拖入 Applications。
-- 当前 macOS 包采用 ad-hoc 签名、尚未进行 Apple 公证。若首次启动提示无法验证开发者，请在 Finder 中按住 Control 点击应用并选择“打开”。
+- 下载 `TokenOrb-macOS.dmg`，打开后将 `TokenOrb` 拖入“Applications（应用程序）”文件夹。
+- 当前 macOS 包尚未经过 Apple 公证。首次启动被阻止后，请前往“系统设置 → 隐私与安全性”，在“安全性”区域允许打开 `TokenOrb`；完整步骤请查看 README 中的“macOS 安装”。
 
 ## 源码与校验
 
@@ -54,4 +64,4 @@
 - Windows 校验：`TokenOrb-Windows.sha256`
 - macOS 校验：`TokenOrb-macOS.sha256`
 
-完整变更：[v1.5.1...v1.5.2](https://github.com/chenxulin/TokenOrb/compare/v1.5.1...v1.5.2)
+完整变更：[v1.5.2...v1.5.3](https://github.com/chenxulin/TokenOrb/compare/v1.5.2...v1.5.3)

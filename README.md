@@ -1,20 +1,25 @@
-# TokenOrb v1.5.2
+# TokenOrb v1.5.3
 
-Token Orb 是一个实时监控codex剩余额度的悬浮球小软件。
+TokenOrb 是一个实时监控 Codex 剩余额度的悬浮球小软件。
 
 ## Windows 安装
 
 1. 从右侧 Release 下载 `TokenOrb-Windows.msi`（推荐）进行安装，也可直接运行免安装的 `TokenOrb-Windows.exe`。
-2. 启动 Token Orb。
-3. Token Orb 会在 Codex 桌面应用启动时出现，并在 Codex 关闭后退出悬浮球界面。
+2. 启动 TokenOrb。
+3. TokenOrb 会在 Codex 桌面应用启动时出现，并在 Codex 关闭后退出悬浮球界面。
 
 ## macOS 安装
 
-1. 从右侧 Release 下载并打开 `TokenOrb-macOS.dmg`。
-2. 将 `Token Orb.app` 拖入“Applications”后启动。
-3. 当前安装包使用 ad-hoc 签名、尚未公证；若 macOS 提示无法验证开发者，请在 Finder 中按住 Control 点击应用并选择“打开”。
+适用于 macOS 13 及更新版本，支持 Apple Silicon 和 Intel Mac。
 
-macOS 客户端支持 Apple Silicon 与 Intel、菜单栏、桌面悬浮球、实时额度、外观设置、账号切换重连和跟随 Codex 启动/退出。
+1. 从右侧 Release 下载 `TokenOrb-macOS.dmg`，下载完成后双击打开。
+2. 在安装窗口中，将 `TokenOrb` 拖到“Applications（应用程序）”文件夹。请不要直接在 DMG 中运行。
+3. 打开 Finder 的“应用程序”文件夹，双击 `TokenOrb`。首次打开时，macOS 会阻止应用运行；看到提示后关闭提示窗口即可。
+4. 点击屏幕左上角的苹果菜单，依次打开“系统设置 → 隐私与安全性”。
+5. 向下找到“安全性”区域，找到与 `TokenOrb` 相关的拦截提示，点击旁边的放行按钮（通常显示为“仍要打开”），然后使用 Touch ID 或输入 Mac 登录密码，并再次确认打开。
+6. 返回“应用程序”文件夹启动 `TokenOrb`。系统会记住这次选择，以后可以直接双击打开。仅第一次安装需要手动允许。
+
+macOS 客户端支持 Apple Silicon 与 Intel、菜单栏、桌面悬浮球、实时额度、外观设置、账号切换重连和进程级跟随 Codex 启动/退出。轻量 watcher 在等待期间保留菜单栏诊断入口。
 
 ## 界面预览
 #### 1. 悬浮球

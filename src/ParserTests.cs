@@ -300,8 +300,8 @@ namespace CodexQuotaBall
         {
             Assert(AppIdentity.ProductName == "TokenOrb", "Product name should be TokenOrb");
             Assert(AppIdentity.ExecutableFileName == "TokenOrb.exe", "Executable name should be TokenOrb.exe");
-            Assert(AppIdentity.DisplayVersion == "v1.5.2", "Display version should be v1.5.2");
-            Assert(AppIdentity.ProtocolVersion == "1.5.2", "Protocol version should be semantic v1.5.2");
+            Assert(AppIdentity.DisplayVersion == "v1.5.3", "Display version should be v1.5.3");
+            Assert(AppIdentity.ProtocolVersion == "1.5.3", "Protocol version should be semantic v1.5.3");
             Assert(AppIdentity.Publisher == "chenxulin", "Publisher should be chenxulin");
         }
 

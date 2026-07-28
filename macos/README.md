@@ -5,11 +5,27 @@ Swift、AppKit 和 Swift Package Manager，不依赖第三方库。
 
 ## 安装
 
-从 GitHub Release 下载并打开 `TokenOrb-macOS.dmg`，将 `TokenOrb.app` 拖入
-“Applications”。发布包同时支持 Apple Silicon 与 Intel。
+适用于 macOS 13 及更新版本，发布包同时支持 Apple Silicon 和 Intel Mac。
 
-当前安装包使用 ad-hoc 签名、尚未公证。若 macOS 提示无法验证开发者，请在
-Finder 中按住 Control 点击应用并选择“打开”。
+1. 从 GitHub Release 下载 `TokenOrb-macOS.dmg`，下载完成后双击打开。
+2. 在安装窗口中，将 `TokenOrb` 拖到“Applications（应用程序）”文件夹。请不要
+   直接在 DMG 中运行。
+3. 打开 Finder 的“应用程序”文件夹，双击 `TokenOrb`。首次打开时，macOS 会阻止
+   应用运行；看到提示后关闭提示窗口即可。
+4. 点击屏幕左上角的苹果菜单，依次打开“系统设置 → 隐私与安全性”。
+5. 向下找到“安全性”区域，找到与 `TokenOrb` 相关的拦截提示，点击旁边的放行
+   按钮（通常显示为“仍要打开”），然后使用 Touch ID 或输入 Mac 登录密码，并
+   再次确认打开。
+6. 返回“应用程序”文件夹启动 `TokenOrb`。系统会记住这次选择，以后可以直接
+   双击打开。
+
+当前版本尚未经过 Apple 公证，因此首次安装需要手动允许一次。
+
+### 常见问题
+
+- **找不到放行按钮：**返回“应用程序”文件夹，再双击一次 `TokenOrb`，然后重新
+  打开“隐私与安全性”。
+- **放行后没有出现悬浮球：**`TokenOrb` 默认跟随 Codex 运行，请先启动 Codex。
 
 ## 功能
 
