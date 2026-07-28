@@ -51,10 +51,10 @@ private final class WatcherDelegate: NSObject, NSApplicationDelegate, NSMenuDele
     }
 
     private func configureStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem = item
-        item.button?.imagePosition = .imageOnly
-        item.button?.toolTip = "\(AppIdentity.productName) · 正在准备跟随组件"
+        let newStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = newStatusItem
+        newStatusItem.button?.imagePosition = .imageOnly
+        newStatusItem.button?.toolTip = "\(AppIdentity.productName) · 正在准备跟随组件"
 
         let menu = NSMenu(title: AppIdentity.productName)
         menu.delegate = self
@@ -75,7 +75,7 @@ private final class WatcherDelegate: NSObject, NSApplicationDelegate, NSMenuDele
         menu.addItem(item("打开登录项设置", action: #selector(openLoginItemSettings)))
 
         statusMenu = menu
-        item.menu = menu
+        newStatusItem.menu = menu
         updateStatusItem(text: "正在准备…", symbolName: "circle.dotted", visible: true)
     }
 
@@ -422,6 +422,6 @@ private final class WatcherLogger {
 }
 
 let application = NSApplication.shared
-let delegate = WatcherDelegate()
+private let delegate = WatcherDelegate()
 application.delegate = delegate
 application.run()
