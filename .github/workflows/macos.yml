@@ -1,4 +1,4 @@
-name: Build Token Orb for macOS
+name: Build TokenOrb for macOS
 
 on:
   workflow_dispatch:
@@ -33,19 +33,25 @@ jobs:
 
       - name: Verify macOS app
         run: |
-          test "$(lipo -archs 'macos/dist/Token Orb.app/Contents/MacOS/TokenOrb')" = "x86_64 arm64" || \
-            test "$(lipo -archs 'macos/dist/Token Orb.app/Contents/MacOS/TokenOrb')" = "arm64 x86_64"
-          codesign --verify --deep --strict "macos/dist/Token Orb.app"
+          test "$(lipo -archs 'macos/dist/TokenOrb.app/Contents/MacOS/TokenOrb')" = "x86_64 arm64" || \
+            test "$(lipo -archs 'macos/dist/TokenOrb.app/Contents/MacOS/TokenOrb')" = "arm64 x86_64"
+          test "$(lipo -archs 'macos/dist/TokenOrb.app/Contents/Library/LoginItems/TokenOrbWatcher.app/Contents/MacOS/TokenOrbWatcher')" = "x86_64 arm64" || \
+            test "$(lipo -archs 'macos/dist/TokenOrb.app/Contents/Library/LoginItems/TokenOrbWatcher.app/Contents/MacOS/TokenOrbWatcher')" = "arm64 x86_64"
+          test "$(plutil -extract CFBundleDisplayName raw -o - macos/dist/TokenOrb.app/Contents/Info.plist)" = "TokenOrb"
+          test "$(plutil -extract CFBundleDisplayName raw -o - macos/dist/TokenOrb.app/Contents/Library/LoginItems/TokenOrbWatcher.app/Contents/Info.plist)" = "TokenOrb"
+          codesign --verify --deep --strict "macos/dist/TokenOrb.app"
           hdiutil verify macos/dist/TokenOrb-macOS.dmg
           unzip -t macos/dist/TokenOrb-macOS-source.zip
           mount_dir="$RUNNER_TEMP/token-orb-dmg"
           mkdir -p "$mount_dir"
           hdiutil attach macos/dist/TokenOrb-macOS.dmg -readonly -nobrowse -mountpoint "$mount_dir"
           trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true' EXIT
-          test -d "$mount_dir/Token Orb.app"
-          codesign --verify --deep --strict "$mount_dir/Token Orb.app"
-          test "$(lipo -archs "$mount_dir/Token Orb.app/Contents/MacOS/TokenOrb")" = "x86_64 arm64" || \
-            test "$(lipo -archs "$mount_dir/Token Orb.app/Contents/MacOS/TokenOrb")" = "arm64 x86_64"
+          test -d "$mount_dir/TokenOrb.app"
+          codesign --verify --deep --strict "$mount_dir/TokenOrb.app"
+          test "$(lipo -archs "$mount_dir/TokenOrb.app/Contents/MacOS/TokenOrb")" = "x86_64 arm64" || \
+            test "$(lipo -archs "$mount_dir/TokenOrb.app/Contents/MacOS/TokenOrb")" = "arm64 x86_64"
+          test "$(lipo -archs "$mount_dir/TokenOrb.app/Contents/Library/LoginItems/TokenOrbWatcher.app/Contents/MacOS/TokenOrbWatcher")" = "x86_64 arm64" || \
+            test "$(lipo -archs "$mount_dir/TokenOrb.app/Contents/Library/LoginItems/TokenOrbWatcher.app/Contents/MacOS/TokenOrbWatcher")" = "arm64 x86_64"
           hdiutil detach "$mount_dir"
           trap - EXIT
           cd macos/dist

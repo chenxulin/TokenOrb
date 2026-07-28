@@ -13,7 +13,7 @@ private enum LoginItemUpdateError: LocalizedError {
     case registrationDidNotComplete
 
     var errorDescription: String? {
-        "TokenOrb 登录项注册未完成，请确认应用位于 Applications 文件夹后重试。"
+        "TokenOrb 跟随组件注册未完成，请确认 TokenOrb.app 位于 Applications 文件夹后重试。"
     }
 }
 
@@ -123,8 +123,12 @@ final class AppSettings {
             return enabled ? .enabled : .disabled
         }
 
-        let service = SMAppService.mainApp
+        let service = SMAppService.loginItem(identifier: AppIdentity.watcherBundleIdentifier)
+        let legacyMainAppService = SMAppService.mainApp
         if enabled {
+            // v1.5.2 and earlier registered the full UI as the login item. The
+            // watcher now owns login-time monitoring, so remove that legacy job.
+            try unregisterIfNeeded(legacyMainAppService)
             switch service.status {
             case .enabled:
                 return .enabled
@@ -148,6 +152,12 @@ final class AppSettings {
             }
         }
 
+        try unregisterIfNeeded(service)
+        try unregisterIfNeeded(legacyMainAppService)
+        return .disabled
+    }
+
+    private func unregisterIfNeeded(_ service: SMAppService) throws {
         switch service.status {
         case .enabled, .requiresApproval:
             try service.unregister()
@@ -156,7 +166,6 @@ final class AppSettings {
         @unknown default:
             try service.unregister()
         }
-        return .disabled
     }
 
     func openLoginItemSettings() {
