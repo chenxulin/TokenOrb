@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case followCodex = 102
         case showDetails = 103
         case refreshNow = 104
+        case runtimeStatus = 105
     }
 
     private let settings = AppSettings.shared
@@ -21,7 +22,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
-    private var processTimer: Timer?
     private var refreshTimer: Timer?
     private var authTimer: Timer?
     private var processRetryTimer: Timer?
@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var localPollTimer: Timer?
     private var localDebounceTimer: Timer?
     private var presentationTimer: Timer?
+    private var codexExitTimer: Timer?
+    private var watcherLaunchValidationTimer: Timer?
 
     private var snapshot: QuotaSnapshot?
     private var liveSnapshot: QuotaSnapshot?
@@ -43,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastLocalFingerprint: LocalSessionsFingerprint?
     private var localFingerprintCheckInFlight = false
     private let demoMode = CommandLine.arguments.contains("--demo")
+    private let launchedByWatcher = CommandLine.arguments.contains(
+        AppIdentity.watcherLaunchArgument
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -58,7 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        _ = processMonitor.poll()
+        processMonitor.onStateChanged = { [weak self] wasRunning, isRunning, source in
+            self?.handleCodexStateChange(
+                wasRunning: wasRunning,
+                isRunning: isRunning,
+                source: source
+            )
+        }
+        processMonitor.start()
         do {
             let result = try settings.updateLoginItem(enabled: settings.followCodex)
             if result == .requiresApproval {
@@ -69,11 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showFollowCodexError(error)
         }
         evaluateRuntimeState()
+        scheduleWatcherLaunchValidationIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         [
-            processTimer,
             refreshTimer,
             authTimer,
             processRetryTimer,
@@ -81,7 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             localPollTimer,
             localDebounceTimer,
             presentationTimer,
+            codexExitTimer,
+            watcherLaunchValidationTimer,
         ].forEach { $0?.invalidate() }
+        processMonitor.stop()
         client.stopAndWait()
     }
 
@@ -169,20 +184,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard !demoMode else { return }
 
-        processTimer = commonTimer(interval: 2) { [weak self] in
-            guard let self else { return }
-            let wasRunning = self.processMonitor.isRunning
-            guard self.processMonitor.poll() else { return }
-            if OrbRuntimePolicy.shouldResetManualHide(
-                followCodex: self.settings.followCodex,
-                wasCodexRunning: wasRunning,
-                codexRunning: self.processMonitor.isRunning
-            ) {
-                // Manual hiding is scoped to one Codex session on Windows.
-                self.manuallyHidden = false
-            }
-            self.evaluateRuntimeState()
-        }
         refreshTimer = commonTimer(interval: 20) { [weak self] in
             guard let self, self.clientActive else { return }
             if !self.client.isRecovering {
@@ -214,6 +215,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let timer = Timer(timeInterval: interval, repeats: true) { _ in action() }
         RunLoop.main.add(timer, forMode: .common)
         return timer
+    }
+
+    private func handleCodexStateChange(
+        wasRunning: Bool,
+        isRunning: Bool,
+        source: String
+    ) {
+        if OrbRuntimePolicy.shouldResetManualHide(
+            followCodex: settings.followCodex,
+            wasCodexRunning: wasRunning,
+            codexRunning: isRunning
+        ) {
+            manuallyHidden = false
+        }
+        if isRunning {
+            codexExitTimer?.invalidate()
+            codexExitTimer = nil
+            watcherLaunchValidationTimer?.invalidate()
+            watcherLaunchValidationTimer = nil
+        }
+        evaluateRuntimeState()
+
+        if settings.followCodex, wasRunning, !isRunning {
+            scheduleCodexExitConfirmation(source: source)
+        }
+    }
+
+    private func scheduleCodexExitConfirmation(source: String) {
+        codexExitTimer?.invalidate()
+        let timer = Timer(timeInterval: 2, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.codexExitTimer = nil
+            _ = self.processMonitor.poll(source: "Codex-exit-confirmation")
+            guard self.settings.followCodex, !self.processMonitor.isRunning else { return }
+            AppLogger.shared.lifecycle(
+                operation: "主应用随 Codex 退出",
+                details: "source=\(source)"
+            )
+            NSApp.terminate(nil)
+        }
+        codexExitTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func scheduleWatcherLaunchValidationIfNeeded() {
+        guard launchedByWatcher, settings.followCodex, !processMonitor.isRunning else { return }
+        watcherLaunchValidationTimer?.invalidate()
+        let timer = Timer(timeInterval: 6, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.watcherLaunchValidationTimer = nil
+            _ = self.processMonitor.poll(source: "watcher-launch-grace")
+            guard self.settings.followCodex, !self.processMonitor.isRunning else { return }
+            AppLogger.shared.lifecycle(
+                operation: "Watcher 启动校验失败",
+                details: "Codex remained undetected after the launch grace period"
+            )
+            NSApp.terminate(nil)
+        }
+        watcherLaunchValidationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func evaluateRuntimeState() {
@@ -386,13 +447,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatusItem() {
-        statusItem?.isVisible = demoMode || OrbRuntimePolicy.runtimeAllowsOrb(
-            followCodex: settings.followCodex,
-            codexRunning: processMonitor.isRunning
-        )
+        // Keep diagnostics and the follow toggle reachable while waiting.
+        statusItem?.isVisible = true
         guard let button = statusItem?.button else { return }
         let percent = snapshot?.mostRestrictiveWindow?.remainingPercent
-        button.title = percent.map { " \(QuotaFormatting.roundedPercent($0))%" } ?? " —"
+        button.title = percent.map { " \(QuotaFormatting.roundedPercent($0))%" }
+            ?? (settings.followCodex && !processMonitor.isRunning ? " 等待 Codex" : " —")
         button.image = statusImage(color: settings.accentColor, connected: connected)
         button.contentTintColor = nil
         button.toolTip = "\(AppIdentity.productName) · \(statusText)"
@@ -418,6 +478,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func makeMenu(includeAbout: Bool) -> NSMenu {
         let menu = NSMenu(title: AppIdentity.productName)
         menu.delegate = self
+        let runtimeStatus = NSMenuItem(
+            title: "状态：\(statusText)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        runtimeStatus.tag = MenuTag.runtimeStatus.rawValue
+        runtimeStatus.isEnabled = false
+        menu.addItem(runtimeStatus)
+        menu.addItem(.separator())
         let details = item("查看额度", action: #selector(showDetails))
         details.tag = MenuTag.showDetails.rawValue
         menu.addItem(details)
@@ -434,6 +503,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let follow = item("跟随 Codex 启动/退出", action: #selector(toggleFollowCodex))
             follow.tag = MenuTag.followCodex.rawValue
             menu.addItem(follow)
+            menu.addItem(item("打开诊断日志", action: #selector(openDiagnosticLogs)))
             menu.addItem(item("关于", action: #selector(showAbout)))
         }
         menu.addItem(item("退出", action: #selector(quit)))
@@ -453,7 +523,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             codexRunning: processMonitor.isRunning
         )
         let orbVisible = runtimeAllowsOrb && !manuallyHidden
+        menu.item(withTag: MenuTag.runtimeStatus.rawValue)?.title = "状态：\(statusText)"
         menu.item(withTag: MenuTag.toggleOrb.rawValue)?.state = orbVisible ? .on : .off
+        menu.item(withTag: MenuTag.toggleOrb.rawValue)?.isEnabled = runtimeAllowsOrb
         menu.item(withTag: MenuTag.showDetails.rawValue)?.isEnabled = orbVisible
         menu.item(withTag: MenuTag.refreshNow.rawValue)?.isEnabled = orbVisible
         let followItem = menu.item(withTag: MenuTag.followCodex.rawValue)
@@ -522,7 +594,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showFollowCodexError(error)
             return
         }
-        _ = processMonitor.poll()
+        codexExitTimer?.invalidate()
+        codexExitTimer = nil
+        watcherLaunchValidationTimer?.invalidate()
+        watcherLaunchValidationTimer = nil
+        _ = processMonitor.poll(source: "follow-setting-change")
         if settings.followCodex, !processMonitor.isRunning {
             manuallyHidden = false
         }
@@ -534,7 +610,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         aboutController.show()
     }
 
+    @objc private func openDiagnosticLogs() {
+        AppLogger.shared.prepareDirectory()
+        NSWorkspace.shared.open(AppLogger.shared.directoryURL)
+    }
+
     private func showFollowCodexError(_ error: Error) {
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "无法更新 Codex 跟随设置"
@@ -544,10 +626,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func showLoginItemApprovalAlert() {
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "需要允许 \(AppIdentity.productName) 在登录时打开"
-        alert.informativeText = "请在系统设置的登录项中允许 \(AppIdentity.productName)，跟随 Codex 才能在下次登录后自动生效。"
+        alert.messageText = "需要允许 \(AppIdentity.productName) 在后台运行"
+        alert.informativeText = "请在系统设置的登录项中允许 \(AppIdentity.productName)。轻量 watcher 会等待 Codex，并只在 Codex 运行时启动主应用。"
         alert.addButton(withTitle: "打开登录项设置")
         alert.addButton(withTitle: "稍后")
         if alert.runModal() == .alertFirstButtonReturn {

@@ -10,12 +10,17 @@ let package = Package(
     products: [
         .library(name: "TokenOrbCore", targets: ["TokenOrbCore"]),
         .executable(name: "TokenOrb", targets: ["TokenOrbMac"]),
+        .executable(name: "TokenOrbWatcher", targets: ["TokenOrbWatcher"]),
         .executable(name: "TokenOrbCoreChecks", targets: ["TokenOrbCoreChecks"]),
     ],
     targets: [
         .target(name: "TokenOrbCore"),
         .executableTarget(
             name: "TokenOrbMac",
+            dependencies: ["TokenOrbCore"]
+        ),
+        .executableTarget(
+            name: "TokenOrbWatcher",
             dependencies: ["TokenOrbCore"]
         ),
         .executableTarget(

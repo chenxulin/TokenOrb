@@ -207,8 +207,16 @@ func checkFormatting() {
 
 func checkAppIdentity() {
     expect(AppIdentity.productName == "TokenOrb", "product name")
-    expect(AppIdentity.displayVersion == "v1.5.2", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.2", "protocol version")
+    expect(
+        AppIdentity.bundleIdentifier == "com.chenxulin.TokenOrb",
+        "main bundle identifier"
+    )
+    expect(
+        AppIdentity.watcherBundleIdentifier == "com.chenxulin.TokenOrb.Watcher",
+        "watcher bundle identifier"
+    )
+    expect(AppIdentity.displayVersion == "v1.5.3", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.3", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 
@@ -549,6 +557,15 @@ func checkCodexProcessPolicy() {
         "Codex desktop bundle should be detected"
     )
     expect(
+        CodexProcessPolicy.isDesktopHost(
+            bundleIdentifier: "COM.OPENAI.CODEX",
+            localizedName: nil,
+            bundlePath: nil,
+            isRegularApplication: false
+        ),
+        "exact Codex bundle should not depend on activation policy"
+    )
+    expect(
         !CodexProcessPolicy.isDesktopHost(
             bundleIdentifier: nil,
             localizedName: "codex",
@@ -565,6 +582,22 @@ func checkCodexProcessPolicy() {
             isRegularApplication: false
         ),
         "Codex CLI must not count as the desktop host"
+    )
+    expect(
+        CodexProcessPolicy.isDiagnosticCandidate(
+            bundleIdentifier: "com.openai.codex.helper",
+            localizedName: nil,
+            bundlePath: nil
+        ),
+        "Codex helper should be included in diagnostics"
+    )
+    expect(
+        !CodexProcessPolicy.isDiagnosticCandidate(
+            bundleIdentifier: "com.apple.finder",
+            localizedName: "Finder",
+            bundlePath: "/System/Library/CoreServices/Finder.app"
+        ),
+        "unrelated apps should be omitted from diagnostics"
     )
 }
 
@@ -697,4 +730,4 @@ if failures > 0 {
     fputs("\(failures) core check(s) failed.\n", stderr)
     exit(1)
 }
-print("All Token Orb core checks passed.")
+print("All TokenOrb core checks passed.")

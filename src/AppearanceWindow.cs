@@ -53,9 +53,9 @@ namespace CodexQuotaBall
             ResizeMode = ResizeMode.NoResize;
             AllowsTransparency = true;
             Background = Brushes.Transparent;
-            ShowInTaskbar = false;
+            ShowInTaskbar = true;
             Topmost = false;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
             FontFamily = new FontFamily("Microsoft YaHei UI");
             UseLayoutRounding = true;
             SnapsToDevicePixels = true;
@@ -237,7 +237,7 @@ namespace CodexQuotaBall
             actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
             actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Button cancel = AppearanceUi.CreateActionButton("取消", false, 96);
-            cancel.Click += delegate { DialogResult = false; };
+            cancel.Click += delegate { Close(); };
             Grid.SetColumn(cancel, 1);
             actions.Children.Add(cancel);
             Button save = AppearanceUi.CreateActionButton("保存", true, 132);
@@ -265,6 +265,8 @@ namespace CodexQuotaBall
         public QuotaTextStyle SelectedTextStyle { get; private set; }
 
         public int SelectedAnimationFrameRate { get; private set; }
+
+        public bool WasAccepted { get; private set; }
 
         private Border CreatePreviewCard()
         {
@@ -714,14 +716,15 @@ namespace CodexQuotaBall
             SelectedColor = selectedColor;
             SelectedTextStyle = selectedTextStyle;
             SelectedAnimationFrameRate = selectedAnimationFrameRate;
-            DialogResult = true;
+            WasAccepted = true;
+            Close();
         }
 
         private void OnWindowKeyDown(object sender, KeyEventArgs args)
         {
             if (args.Key == Key.Escape)
             {
-                DialogResult = false;
+                Close();
                 args.Handled = true;
             }
         }
