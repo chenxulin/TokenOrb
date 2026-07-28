@@ -535,6 +535,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showDetails() {
         guard orbController.isVisible else { return }
+        appearanceController.hide()
         detailController.toggle(relativeTo: orbController.orbFrame)
     }
 
@@ -606,7 +607,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showAbout() {
-        detailController.hide()
         aboutController.show()
     }
 

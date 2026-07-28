@@ -7,9 +7,179 @@ private final class EscapeClosingDetailPanel: NSPanel {
     }
 }
 
+private enum DetailPalette {
+    struct Surfaces {
+        let card: NSColor
+        let cardBorder: NSColor
+        let inset: NSColor
+        let insetBorder: NSColor
+        let progressTrack: NSColor
+    }
+
+    static let primaryText = adaptive(
+        light: color(23, 56, 75),
+        dark: color(239, 248, 252)
+    )
+    static let secondaryText = adaptive(
+        light: color(72, 102, 119),
+        dark: color(180, 203, 214)
+    )
+    static let metadataText = adaptive(
+        light: color(47, 91, 113),
+        dark: color(201, 220, 229)
+    )
+    static let footerText = adaptive(
+        light: color(56, 86, 100),
+        dark: color(199, 216, 224)
+    )
+
+    static func surfaces(for appearance: NSAppearance) -> Surfaces {
+        if isDark(appearance) {
+            return Surfaces(
+                card: color(38, 64, 79),
+                cardBorder: color(72, 103, 120),
+                inset: color(27, 50, 63),
+                insetBorder: color(61, 91, 106),
+                progressTrack: color(67, 94, 107)
+            )
+        }
+        return Surfaces(
+            card: color(244, 250, 253),
+            cardBorder: color(190, 213, 225),
+            inset: color(229, 241, 247),
+            insetBorder: color(198, 219, 229),
+            progressTrack: color(210, 229, 238)
+        )
+    }
+
+    static func toneColor(_ tone: OrbQuotaTone) -> NSColor {
+        adaptive(
+            light: toneColor(tone, dark: false),
+            dark: toneColor(tone, dark: true)
+        )
+    }
+
+    static func toneColor(_ tone: OrbQuotaTone, for appearance: NSAppearance) -> NSColor {
+        toneColor(tone, dark: isDark(appearance))
+    }
+
+    private static func toneColor(_ tone: OrbQuotaTone, dark: Bool) -> NSColor {
+        switch (tone, dark) {
+        case (.healthy, false):
+            return color(8, 127, 91)
+        case (.healthy, true):
+            return color(90, 221, 180)
+        case (.warning, false):
+            return color(143, 82, 0)
+        case (.warning, true):
+            return color(255, 207, 112)
+        case (.critical, false), (.depleted, false):
+            return color(183, 49, 75)
+        case (.critical, true), (.depleted, true):
+            return color(255, 139, 158)
+        case (.waiting, false):
+            return color(34, 105, 157)
+        case (.waiting, true):
+            return color(119, 197, 246)
+        }
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            isDark(appearance) ? dark : light
+        }
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    private static func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+        NSColor(
+            srgbRed: red / 255,
+            green: green / 255,
+            blue: blue / 255,
+            alpha: 1
+        )
+    }
+}
+
+private final class DetailSurfaceView: NSView {
+    enum Style {
+        case card
+        case inset
+    }
+
+    private let style: Style
+
+    init(style: Style, cornerRadius: CGFloat) {
+        self.style = style
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = cornerRadius
+        layer?.borderWidth = 1
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = DetailPalette.surfaces(for: effectiveAppearance)
+        switch style {
+        case .card:
+            layer?.backgroundColor = surfaces.card.cgColor
+            layer?.borderColor = surfaces.cardBorder.cgColor
+        case .inset:
+            layer?.backgroundColor = surfaces.inset.cgColor
+            layer?.borderColor = surfaces.insetBorder.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+private final class DetailStatusPillView: NSView {
+    var tone = OrbQuotaTone.waiting {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let color = DetailPalette.toneColor(tone, for: effectiveAppearance)
+        let alpha: CGFloat = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? 0.20
+            : 0.12
+        layer?.backgroundColor = color.withAlphaComponent(alpha).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 final class DetailWindowController: NSWindowController, NSWindowDelegate {
     private let statusLabel = NSTextField(labelWithString: "正在准备…")
-    private let statusPill = NSView()
+    private let statusPill = DetailStatusPillView()
     private let primaryCard = QuotaCardView()
     private let secondaryCard = QuotaCardView()
     private let creditsValue = NSTextField(labelWithString: "待补充")
@@ -54,11 +224,10 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
                 || status.localizedCaseInsensitiveContains("准备")
         )
         statusLabel.stringValue = connected ? "实时" : (connecting ? "连接中" : "本地")
-        let statusColor = connected
-            ? NSColor(srgbRed: 45 / 255, green: 194 / 255, blue: 145 / 255, alpha: 1)
-            : NSColor(srgbRed: 239 / 255, green: 169 / 255, blue: 66 / 255, alpha: 1)
+        let statusTone: OrbQuotaTone = connected ? .healthy : .warning
+        let statusColor = DetailPalette.toneColor(statusTone)
         statusLabel.textColor = statusColor
-        statusPill.layer?.backgroundColor = statusColor.withAlphaComponent(35 / 255).cgColor
+        statusPill.tone = statusTone
         statusPill.toolTip = status
 
         primaryCard.update(window: snapshot?.primary)
@@ -140,13 +309,12 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
 
         let title = NSTextField(labelWithString: "Codex 额度")
         title.font = .systemFont(ofSize: 18, weight: .bold)
-        title.textColor = NSColor(srgbRed: 24 / 255, green: 72 / 255, blue: 99 / 255, alpha: 1)
+        title.textColor = .labelColor
 
         statusLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         statusLabel.alignment = .center
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusPill.wantsLayer = true
-        statusPill.layer?.cornerRadius = 10
         statusPill.translatesAutoresizingMaskIntoConstraints = false
         statusPill.addSubview(statusLabel)
         NSLayoutConstraint.activate([
@@ -174,24 +342,17 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         primaryCard.translatesAutoresizingMaskIntoConstraints = false
         secondaryCard.translatesAutoresizingMaskIntoConstraints = false
 
-        let infoCard = NSView()
-        infoCard.wantsLayer = true
-        infoCard.layer?.cornerRadius = 12
-        infoCard.layer?.backgroundColor = NSColor(
-            srgbRed: 238 / 255,
-            green: 249 / 255,
-            blue: 1,
-            alpha: 1
-        ).cgColor
+        let infoCard = DetailSurfaceView(style: .card, cornerRadius: 12)
         infoCard.translatesAutoresizingMaskIntoConstraints = false
 
         let creditsTitle = NSTextField(labelWithString: "额外积分")
         let planTitle = NSTextField(labelWithString: "当前套餐")
         [creditsTitle, planTitle].forEach {
-            $0.textColor = .secondaryLabelColor
+            $0.textColor = DetailPalette.secondaryText
             $0.font = .systemFont(ofSize: 12)
         }
         [creditsValue, planValue].forEach {
+            $0.textColor = DetailPalette.primaryText
             $0.font = .systemFont(ofSize: 13, weight: .semibold)
             $0.alignment = .right
         }
@@ -208,7 +369,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         infoCard.addSubview(infoGrid)
 
         [sourceLabel, capturedAtLabel].forEach {
-            $0.textColor = .secondaryLabelColor
+            $0.textColor = DetailPalette.footerText
             $0.font = .systemFont(ofSize: 11)
         }
         sourceLabel.lineBreakMode = .byTruncatingTail
@@ -267,38 +428,22 @@ private final class QuotaCardView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 12
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor(
-            srgbRed: 164 / 255,
-            green: 213 / 255,
-            blue: 240 / 255,
-            alpha: 190 / 255
-        ).cgColor
-        layer?.backgroundColor = NSColor(
-            srgbRed: 232 / 255,
-            green: 247 / 255,
-            blue: 1,
-            alpha: 1
-        ).cgColor
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.textColor = DetailPalette.primaryText
         remainingLabel.font = .systemFont(ofSize: 16, weight: .bold)
-        remainingLabel.textColor = .systemGreen
+        remainingLabel.textColor = DetailPalette.toneColor(.healthy)
         remainingLabel.alignment = .right
         [resetDateLabel, resetCountdownLabel].forEach {
             $0.font = .systemFont(ofSize: 10.5, weight: .semibold)
-            $0.textColor = NSColor(
-                srgbRed: 56 / 255,
-                green: 103 / 255,
-                blue: 130 / 255,
-                alpha: 1
-            )
+            $0.textColor = DetailPalette.metadataText
         }
         resetCountdownLabel.alignment = .right
         resetCountdownLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let resetTitle = NSTextField(labelWithString: "下轮重置")
         resetTitle.font = .systemFont(ofSize: 10)
-        resetTitle.textColor = NSColor(srgbRed: 92 / 255, green: 102 / 255, blue: 110 / 255, alpha: 1)
+        resetTitle.textColor = DetailPalette.secondaryText
         let resetRow = NSStackView(views: [
             resetTitle,
             resetDateLabel,
@@ -310,22 +455,7 @@ private final class QuotaCardView: NSView {
         resetRow.alignment = .centerY
         resetRow.translatesAutoresizingMaskIntoConstraints = false
 
-        let resetPanel = NSView()
-        resetPanel.wantsLayer = true
-        resetPanel.layer?.cornerRadius = 8
-        resetPanel.layer?.borderWidth = 1
-        resetPanel.layer?.borderColor = NSColor(
-            srgbRed: 164 / 255,
-            green: 213 / 255,
-            blue: 240 / 255,
-            alpha: 145 / 255
-        ).cgColor
-        resetPanel.layer?.backgroundColor = NSColor(
-            srgbRed: 218 / 255,
-            green: 241 / 255,
-            blue: 253 / 255,
-            alpha: 1
-        ).cgColor
+        let resetPanel = DetailSurfaceView(style: .inset, cornerRadius: 8)
         resetPanel.addSubview(resetRow)
         NSLayoutConstraint.activate([
             resetRow.leadingAnchor.constraint(equalTo: resetPanel.leadingAnchor, constant: 8),
@@ -361,21 +491,35 @@ private final class QuotaCardView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = DetailPalette.surfaces(for: effectiveAppearance)
+        layer?.backgroundColor = surfaces.card.cgColor
+        layer?.borderColor = surfaces.cardBorder.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        progress.needsDisplay = true
+    }
+
     func update(window: QuotaWindow?) {
         quotaWindow = window
         titleLabel.stringValue = "\(QuotaFormatting.windowName(window))额度"
         if let window {
             remainingLabel.stringValue = "剩余 \(QuotaFormatting.roundedPercent(window.remainingPercent))%"
             progress.remainingPercent = window.remainingPercent
-            let color = quotaColor(remaining: window.remainingPercent)
-            remainingLabel.textColor = color
-            progress.accentColor = color
+            let tone = OrbVisualMetrics.tone(remaining: window.remainingPercent)
+            remainingLabel.textColor = DetailPalette.toneColor(tone)
+            progress.tone = tone
             refreshReset()
         } else {
             remainingLabel.stringValue = "剩余 —"
-            remainingLabel.textColor = .secondaryLabelColor
+            remainingLabel.textColor = DetailPalette.secondaryText
             progress.remainingPercent = 0
-            progress.accentColor = .systemBlue
+            progress.tone = .waiting
             resetDateLabel.stringValue = "时间未知"
             resetCountdownLabel.stringValue = ""
         }
@@ -386,25 +530,13 @@ private final class QuotaCardView: NSView {
         resetCountdownLabel.stringValue = QuotaFormatting.resetCountdownText(quotaWindow, now: now)
     }
 
-    private func quotaColor(remaining: Double) -> NSColor {
-        switch OrbVisualMetrics.tone(remaining: remaining) {
-        case .healthy:
-            return NSColor(srgbRed: 45 / 255, green: 194 / 255, blue: 145 / 255, alpha: 1)
-        case .warning:
-            return NSColor(srgbRed: 239 / 255, green: 169 / 255, blue: 66 / 255, alpha: 1)
-        case .critical, .depleted:
-            return NSColor(srgbRed: 232 / 255, green: 100 / 255, blue: 119 / 255, alpha: 1)
-        case .waiting:
-            return .systemBlue
-        }
-    }
 }
 
 private final class QuotaBarView: NSView {
     var remainingPercent = 0.0 {
         didSet { needsDisplay = true }
     }
-    var accentColor = NSColor.systemBlue {
+    var tone = OrbQuotaTone.waiting {
         didSet { needsDisplay = true }
     }
 
@@ -416,7 +548,7 @@ private final class QuotaBarView: NSView {
         super.draw(dirtyRect)
         let track = bounds.insetBy(dx: 0, dy: max(0, (bounds.height - 7) / 2))
         let radius = track.height / 2
-        NSColor(srgbRed: 213 / 255, green: 234 / 255, blue: 245 / 255, alpha: 1).setFill()
+        DetailPalette.surfaces(for: effectiveAppearance).progressTrack.setFill()
         NSBezierPath(roundedRect: track, xRadius: radius, yRadius: radius).fill()
 
         let safePercent = remainingPercent.clamped(to: 0...100)
@@ -430,8 +562,13 @@ private final class QuotaBarView: NSView {
         )
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: track, xRadius: radius, yRadius: radius).addClip()
-        accentColor.setFill()
+        DetailPalette.toneColor(tone, for: effectiveAppearance).setFill()
         NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }

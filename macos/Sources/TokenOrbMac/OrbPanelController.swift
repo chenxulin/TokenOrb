@@ -267,7 +267,9 @@ final class OrbView: NSView {
         } else if !shouldAnimate {
             stopAnimationClock()
             activeContextMenu?.cancelTracking()
-            window?.ignoresMouseEvents = true
+            if isInteractive {
+                window?.ignoresMouseEvents = true
+            }
         }
     }
 
@@ -494,7 +496,7 @@ final class OrbView: NSView {
     }
 
     private func updateWindowMousePassthrough() {
-        guard let window else { return }
+        guard isInteractive, let window else { return }
         let orbRectInWindow = convert(bounds, to: nil)
         let orbRectOnScreen = window.convertToScreen(orbRectInWindow)
         let isDragging = mouseDownLocation != nil

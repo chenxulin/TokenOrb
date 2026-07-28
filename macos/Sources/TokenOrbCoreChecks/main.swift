@@ -215,8 +215,8 @@ func checkAppIdentity() {
         AppIdentity.watcherBundleIdentifier == "com.chenxulin.TokenOrb.Watcher",
         "watcher bundle identifier"
     )
-    expect(AppIdentity.displayVersion == "v1.5.3", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.3", "protocol version")
+    expect(AppIdentity.displayVersion == "v1.5.4", "display version")
+    expect(AppIdentity.protocolVersion == "1.5.4", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 
@@ -489,6 +489,14 @@ func checkOrbVisualMetrics() {
 }
 
 func checkRetryPolicy() {
+    expect(
+        AppServerLivenessPolicy.initializeTimeout == 15,
+        "app-server initialize should have a bounded startup timeout"
+    )
+    expect(
+        AppServerLivenessPolicy.rateLimitsTimeout == 15,
+        "rate-limit reads should have a bounded response timeout"
+    )
     var policy = RealtimeRetryPolicy()
     let first = policy.recordFailure()
     let second = policy.recordFailure()

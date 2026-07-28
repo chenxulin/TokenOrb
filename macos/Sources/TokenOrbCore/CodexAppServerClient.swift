@@ -22,7 +22,42 @@ public final class CodexAppServerClient: @unchecked Sendable {
     private var initialized = false
     private var retryPolicy = RealtimeRetryPolicy()
     private var retryWorkItem: DispatchWorkItem?
+    private var responseTimeoutWorkItem: DispatchWorkItem?
+    private var pendingResponse: PendingResponse?
     private var hasSuccessfulLiveQuery = false
+
+    private enum PendingResponse: Equatable {
+        case initialize
+        case rateLimits(Int)
+
+        var requestID: Int {
+            switch self {
+            case .initialize: return 0
+            case let .rateLimits(requestID): return requestID
+            }
+        }
+
+        var timeout: TimeInterval {
+            switch self {
+            case .initialize: return AppServerLivenessPolicy.initializeTimeout
+            case .rateLimits: return AppServerLivenessPolicy.rateLimitsTimeout
+            }
+        }
+
+        var failureCode: String {
+            switch self {
+            case .initialize: return "initialize_timeout"
+            case .rateLimits: return "rate_limits_timeout"
+            }
+        }
+
+        var failureOperation: String {
+            switch self {
+            case .initialize: return "初始化实时接口超时"
+            case .rateLimits: return "额度查询超时"
+            }
+        }
+    }
 
     public init() {}
 
@@ -59,7 +94,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
     }
 
     public func stopAndWait() {
-        stateQueue.sync {
+        _ = stateQueue.sync {
             stopLocked(preserveRecoveryState: false)
         }
     }
@@ -160,6 +195,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
                     requireInitialized: false,
                     operation: "初始化实时接口失败"
                 )
+            } else {
+                scheduleResponseTimeoutLocked(.initialize)
             }
         } catch {
             raiseDiagnostic("启动 Codex app-server", error.localizedDescription)
@@ -183,6 +220,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
             hasSuccessfulLiveQuery = false
             cancelRetryLocked()
         }
+        cancelResponseTimeoutLocked()
         requestIDs.removeAll()
         outputBuffer.removeAll(keepingCapacity: false)
 
@@ -231,6 +269,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
                 code: "send_failed",
                 message: error.localizedDescription
             )
+        } else {
+            scheduleResponseTimeoutLocked(.rateLimits(requestID))
         }
     }
 
@@ -272,6 +312,8 @@ public final class CodexAppServerClient: @unchecked Sendable {
             let error = QuotaParser.dictionary(message["error"])
 
             if id == 0 {
+                guard pendingResponse == .initialize else { return }
+                cancelResponseTimeoutLocked()
                 guard result != nil else {
                     let message = QuotaParser.string(error?["message"])
                         ?? "Codex 实时接口初始化失败"
@@ -306,6 +348,9 @@ public final class CodexAppServerClient: @unchecked Sendable {
             }
 
             guard requestIDs.remove(id) != nil else { return }
+            if pendingResponse == .rateLimits(id) {
+                cancelResponseTimeoutLocked()
+            }
             if let result,
                let limits = QuotaParser.findRateLimits(in: result),
                let snapshot = QuotaParser.snapshot(
@@ -364,6 +409,7 @@ public final class CodexAppServerClient: @unchecked Sendable {
         errorPipe = nil
         initialized = false
         requestIDs.removeAll()
+        cancelResponseTimeoutLocked()
         raiseDiagnostic("Codex app-server 退出", "exitStatus=\(terminated.terminationStatus)")
         handleRealtimeFailureLocked(
             requestID: nil,
@@ -378,7 +424,43 @@ public final class CodexAppServerClient: @unchecked Sendable {
         retryPolicy.recordSuccess()
         hasSuccessfulLiveQuery = true
         requestIDs.removeAll()
+        cancelResponseTimeoutLocked()
         cancelRetryLocked()
+    }
+
+    private func scheduleResponseTimeoutLocked(_ response: PendingResponse) {
+        cancelResponseTimeoutLocked()
+        let activeGeneration = generation
+        pendingResponse = response
+        let work = DispatchWorkItem { [weak self] in
+            guard
+                let self,
+                self.generation == activeGeneration,
+                self.pendingResponse == response
+            else { return }
+
+            self.responseTimeoutWorkItem = nil
+            self.pendingResponse = nil
+            _ = self.stopLocked(preserveRecoveryState: true)
+            self.handleRealtimeFailureLocked(
+                requestID: response.requestID,
+                code: response.failureCode,
+                message: "Codex app-server 在 \(Int(response.timeout)) 秒内没有响应。",
+                requireInitialized: false,
+                operation: response.failureOperation
+            )
+        }
+        responseTimeoutWorkItem = work
+        stateQueue.asyncAfter(
+            deadline: .now() + response.timeout,
+            execute: work
+        )
+    }
+
+    private func cancelResponseTimeoutLocked() {
+        responseTimeoutWorkItem?.cancel()
+        responseTimeoutWorkItem = nil
+        pendingResponse = nil
     }
 
     private func handleQueryFailureLocked(requestID: Int?, code: String, message: String) {

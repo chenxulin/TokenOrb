@@ -1,6 +1,99 @@
 import AppKit
 import TokenOrbCore
 
+private enum AppearancePalette {
+    struct Surfaces {
+        let canvas: NSColor
+        let card: NSColor
+        let cardBorder: NSColor
+        let option: NSColor
+        let optionBorder: NSColor
+        let selectedOption: NSColor
+        let previewBorder: NSColor
+        let swatchBorder: NSColor
+        let shadow: NSColor
+    }
+
+    static let canvas = adaptive(
+        light: color(247, 252, 255),
+        dark: color(15, 25, 31)
+    )
+    static let primaryText = adaptive(
+        light: color(24, 72, 99),
+        dark: color(237, 248, 252)
+    )
+    static let secondaryText = adaptive(
+        light: color(72, 102, 119),
+        dark: color(170, 199, 213)
+    )
+    static let accent = adaptive(
+        light: color(20, 125, 187),
+        dark: color(99, 197, 250)
+    )
+    static let actionFill = adaptive(
+        light: color(20, 125, 187),
+        dark: color(23, 111, 159)
+    )
+
+    static func surfaces(for appearance: NSAppearance) -> Surfaces {
+        if isDark(appearance) {
+            return Surfaces(
+                canvas: color(15, 25, 31),
+                card: color(25, 40, 48),
+                cardBorder: color(56, 88, 104),
+                option: color(20, 35, 43),
+                optionBorder: color(62, 102, 121),
+                selectedOption: color(23, 65, 84),
+                previewBorder: color(84, 137, 163),
+                swatchBorder: color(192, 215, 226),
+                shadow: .black
+            )
+        }
+        return Surfaces(
+            canvas: color(247, 252, 255),
+            card: color(253, 255, 255),
+            cardBorder: color(184, 222, 242).withAlphaComponent(0.85),
+            option: color(250, 254, 255),
+            optionBorder: color(184, 222, 242),
+            selectedOption: color(226, 245, 255),
+            previewBorder: color(164, 213, 240),
+            swatchBorder: .white,
+            shadow: color(24, 72, 99)
+        )
+    }
+
+    static func accent(for appearance: NSAppearance) -> NSColor {
+        isDark(appearance)
+            ? color(99, 197, 250)
+            : color(20, 125, 187)
+    }
+
+    static func success(for appearance: NSAppearance) -> NSColor {
+        isDark(appearance)
+            ? color(94, 219, 179)
+            : color(49, 190, 145)
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            isDark(appearance) ? dark : light
+        }
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    private static func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+        NSColor(
+            srgbRed: red / 255,
+            green: green / 255,
+            blue: blue / 255,
+            alpha: 1
+        )
+    }
+}
+
 final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate, NSWindowDelegate {
     private let settings: AppSettings
     private let sizeSlider = NSSlider(
@@ -13,7 +106,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
     private let sizeField = NSTextField(
         string: String(Int(OrbAppearanceDefaults.size))
     )
-    private let colorPreview = NSView()
+    private let colorPreview = AppearanceColorPreviewView(cornerRadius: 15)
     private let hexLabel = NSTextField(
         labelWithString: OrbAppearanceDefaults.accentHex
     )
@@ -55,9 +148,11 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         panel.title = "个性化外观"
         panel.isReleasedWhenClosed = false
         panel.level = .normal
-        panel.backgroundColor = NSColor(hex: "#F7FCFF")
+        panel.hidesOnDeactivate = false
+        panel.backgroundColor = AppearancePalette.canvas
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
+        panel.contentView = AppearanceCanvasView(frame: panel.contentView?.frame ?? .zero)
         super.init(window: panel)
         panel.delegate = self
         buildContent()
@@ -82,17 +177,20 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func hide() {
+        previewOrb.setAnimating(false)
+        window?.orderOut(nil)
+    }
+
     private func buildContent() {
         guard let content = window?.contentView else { return }
-        content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor(hex: "#F7FCFF").cgColor
 
         let heading = NSTextField(labelWithString: "个性化外观")
         heading.font = .systemFont(ofSize: 22, weight: .bold)
-        heading.textColor = NSColor(hex: "#184863")
+        heading.textColor = AppearancePalette.primaryText
         let subtitle = NSTextField(labelWithString: "调整尺寸、主题色、数字样式和动画帧率")
         subtitle.font = .systemFont(ofSize: 11.5)
-        subtitle.textColor = NSColor(hex: "#5B8299")
+        subtitle.textColor = AppearancePalette.secondaryText
         let headingStack = NSStackView(views: [heading, subtitle])
         headingStack.orientation = .vertical
         headingStack.alignment = .leading
@@ -102,7 +200,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         sizeSlider.isContinuous = true
         sizeSlider.target = self
         sizeSlider.action = #selector(sizeChanged(_:))
-        sizeSlider.trackFillColor = NSColor(hex: "#2FA4EB")
+        sizeSlider.trackFillColor = AppearancePalette.accent
 
         let formatter = NumberFormatter()
         formatter.numberStyle = .none
@@ -116,17 +214,13 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         sizeField.translatesAutoresizingMaskIntoConstraints = false
         sizeField.widthAnchor.constraint(equalToConstant: 58).isActive = true
 
-        colorPreview.wantsLayer = true
-        colorPreview.layer?.cornerRadius = 15
-        colorPreview.layer?.borderWidth = 1
-        colorPreview.layer?.borderColor = NSColor(hex: "#A4D5F0").cgColor
         colorPreview.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             colorPreview.widthAnchor.constraint(equalToConstant: 30),
             colorPreview.heightAnchor.constraint(equalToConstant: 30),
         ])
         hexLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        hexLabel.textColor = NSColor(hex: "#184863")
+        hexLabel.textColor = AppearancePalette.primaryText
 
         let previewCard = makePreviewCard()
         let header = NSStackView(views: [headingStack, NSView(), previewCard])
@@ -152,14 +246,16 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         rightColumn.spacing = 10
         textStyleCard.widthAnchor.constraint(equalTo: rightColumn.widthAnchor).isActive = true
         frameRateCard.widthAnchor.constraint(equalTo: rightColumn.widthAnchor).isActive = true
-        sizeCard.heightAnchor.constraint(equalTo: frameRateCard.heightAnchor).isActive = true
-        colorCard.heightAnchor.constraint(equalTo: textStyleCard.heightAnchor).isActive = true
 
         let controlColumns = NSStackView(views: [leftColumn, rightColumn])
         controlColumns.orientation = .horizontal
         controlColumns.alignment = .top
         controlColumns.distribution = .fillEqually
         controlColumns.spacing = 12
+        NSLayoutConstraint.activate([
+            sizeCard.heightAnchor.constraint(equalTo: frameRateCard.heightAnchor),
+            colorCard.heightAnchor.constraint(equalTo: textStyleCard.heightAnchor),
+        ])
 
         let mainStack = NSStackView(views: [
             header,
@@ -200,10 +296,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
             connected: true
         )
 
-        let statusDot = NSView()
-        statusDot.wantsLayer = true
-        statusDot.layer?.backgroundColor = NSColor(hex: "#31BE91").cgColor
-        statusDot.layer?.cornerRadius = 3.5
+        let statusDot = AppearanceStatusDotView()
         statusDot.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             statusDot.widthAnchor.constraint(equalToConstant: 7),
@@ -211,13 +304,13 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         ])
         let eyebrow = NSTextField(labelWithString: "实时预览")
         eyebrow.font = .systemFont(ofSize: 10, weight: .semibold)
-        eyebrow.textColor = NSColor(hex: "#2FA4EB")
+        eyebrow.textColor = AppearancePalette.accent
         let status = NSStackView(views: [statusDot, eyebrow])
         status.orientation = .horizontal
         status.alignment = .centerY
         status.spacing = 6
         previewStyleLabel.font = .systemFont(ofSize: 18, weight: .bold)
-        previewStyleLabel.textColor = NSColor(hex: "#184863")
+        previewStyleLabel.textColor = AppearancePalette.primaryText
         previewStyleLabel.alignment = .center
         previewStyleLabel.translatesAutoresizingMaskIntoConstraints = false
         status.translatesAutoresizingMaskIntoConstraints = false
@@ -249,7 +342,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
     private func makeSizeCard() -> NSView {
         let unit = NSTextField(labelWithString: "px")
         unit.font = .systemFont(ofSize: 11)
-        unit.textColor = NSColor(hex: "#5B8299")
+        unit.textColor = AppearancePalette.secondaryText
         let sizeRow = NSStackView(views: [sizeSlider, sizeField, unit])
         sizeRow.orientation = .horizontal
         sizeRow.alignment = .centerY
@@ -337,7 +430,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         let save = NSButton(title: "保存", target: self, action: #selector(saveChanges))
         save.keyEquivalent = "\r"
         save.bezelStyle = .rounded
-        save.bezelColor = NSColor(hex: "#2FA4EB")
+        save.bezelColor = AppearancePalette.actionFill
         save.contentTintColor = .white
         save.font = .systemFont(ofSize: 12, weight: .semibold)
         save.translatesAutoresizingMaskIntoConstraints = false
@@ -353,7 +446,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
     private func makeSectionCard(title: String, body: NSView) -> NSView {
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = NSColor(hex: "#184863")
+        titleLabel.textColor = AppearancePalette.primaryText
         let stack = NSStackView(views: [titleLabel, body])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -488,12 +581,88 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
     }
 }
 
+private final class AppearanceCanvasView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = AppearancePalette.surfaces(
+            for: effectiveAppearance
+        ).canvas.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+private final class AppearanceColorPreviewView: NSView {
+    init(cornerRadius: CGFloat) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = cornerRadius
+        layer?.borderWidth = 1
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.borderColor = AppearancePalette.surfaces(
+            for: effectiveAppearance
+        ).previewBorder.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+private final class AppearanceStatusDotView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 3.5
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = AppearancePalette.success(
+            for: effectiveAppearance
+        ).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 private final class AppearanceCardView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(hex: "#FDFFFF").cgColor
-        layer?.borderColor = NSColor(hex: "#B8DEF2").withAlphaComponent(0.85).cgColor
         layer?.borderWidth = 1
         layer?.cornerRadius = 15
     }
@@ -502,19 +671,26 @@ private final class AppearanceCardView: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = AppearancePalette.surfaces(for: effectiveAppearance)
+        layer?.backgroundColor = surfaces.card.cgColor
+        layer?.borderColor = surfaces.cardBorder.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }
 
 private final class ColorPresetButton: NSButton {
     let presetColor: NSColor
 
     var isPresetSelected = false {
-        didSet {
-            layer?.borderWidth = isPresetSelected ? 3 : 1
-            layer?.borderColor = (
-                isPresetSelected ? NSColor(hex: "#2FA4EB") : NSColor.white
-            ).cgColor
-            layer?.shadowOpacity = isPresetSelected ? 0.18 : 0
-        }
+        didSet { needsDisplay = true }
     }
 
     init(name: String, color: NSColor) {
@@ -525,11 +701,7 @@ private final class ColorPresetButton: NSButton {
         toolTip = "\(name) · \(color.hexString)"
         setAccessibilityLabel(name)
         wantsLayer = true
-        layer?.backgroundColor = color.cgColor
         layer?.cornerRadius = 21
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.white.cgColor
-        layer?.shadowColor = NSColor(hex: "#184863").cgColor
         layer?.shadowRadius = 4
         layer?.shadowOffset = .zero
         translatesAutoresizingMaskIntoConstraints = false
@@ -543,21 +715,33 @@ private final class ColorPresetButton: NSButton {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = AppearancePalette.surfaces(for: effectiveAppearance)
+        layer?.backgroundColor = presetColor.cgColor
+        layer?.borderWidth = isPresetSelected ? 3 : 1
+        layer?.borderColor = (
+            isPresetSelected
+                ? AppearancePalette.accent(for: effectiveAppearance)
+                : surfaces.swatchBorder
+        ).cgColor
+        layer?.shadowColor = surfaces.shadow.cgColor
+        layer?.shadowOpacity = isPresetSelected ? 0.20 : 0
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }
 
 private final class FrameRateOptionButton: NSButton {
     let frameRate: Int
 
     var isFrameRateSelected = false {
-        didSet {
-            layer?.backgroundColor = NSColor(
-                hex: isFrameRateSelected ? "#E2F5FF" : "#FAFEFF"
-            ).cgColor
-            layer?.borderColor = NSColor(
-                hex: isFrameRateSelected ? "#2FA4EB" : "#B8DEF2"
-            ).cgColor
-            layer?.borderWidth = isFrameRateSelected ? 2 : 1
-        }
+        didSet { needsDisplay = true }
     }
 
     init(frameRate: Int) {
@@ -566,11 +750,8 @@ private final class FrameRateOptionButton: NSButton {
         isBordered = false
         title = "\(frameRate) FPS"
         font = .systemFont(ofSize: 10.5, weight: .semibold)
-        contentTintColor = NSColor(hex: "#184863")
+        contentTintColor = AppearancePalette.primaryText
         wantsLayer = true
-        layer?.backgroundColor = NSColor(hex: "#FAFEFF").cgColor
-        layer?.borderColor = NSColor(hex: "#B8DEF2").cgColor
-        layer?.borderWidth = 1
         layer?.cornerRadius = 11
         setAccessibilityLabel("\(frameRate) FPS")
         translatesAutoresizingMaskIntoConstraints = false
@@ -581,21 +762,33 @@ private final class FrameRateOptionButton: NSButton {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = AppearancePalette.surfaces(for: effectiveAppearance)
+        layer?.backgroundColor = (
+            isFrameRateSelected ? surfaces.selectedOption : surfaces.option
+        ).cgColor
+        layer?.borderColor = (
+            isFrameRateSelected
+                ? AppearancePalette.accent(for: effectiveAppearance)
+                : surfaces.optionBorder
+        ).cgColor
+        layer?.borderWidth = isFrameRateSelected ? 2 : 1
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }
 
 private final class TextStyleOptionButton: NSButton {
     let textStyle: OrbTextStyle
 
     var isStyleSelected = false {
-        didSet {
-            layer?.backgroundColor = NSColor(
-                hex: isStyleSelected ? "#E2F5FF" : "#FAFEFF"
-            ).cgColor
-            layer?.borderColor = NSColor(
-                hex: isStyleSelected ? "#2FA4EB" : "#B8DEF2"
-            ).cgColor
-            layer?.borderWidth = isStyleSelected ? 2 : 1
-        }
+        didSet { needsDisplay = true }
     }
 
     init(style: OrbTextStyle) {
@@ -604,16 +797,13 @@ private final class TextStyleOptionButton: NSButton {
         isBordered = false
         title = ""
         wantsLayer = true
-        layer?.backgroundColor = NSColor(hex: "#FAFEFF").cgColor
-        layer?.borderColor = NSColor(hex: "#B8DEF2").cgColor
-        layer?.borderWidth = 1
         layer?.cornerRadius = 12
         setAccessibilityLabel("数字样式 \(style.displayName)")
 
         let sample = QuotaTextSampleView(style: style)
         let label = NSTextField(labelWithString: style.displayName)
         label.font = .systemFont(ofSize: 10.5)
-        label.textColor = NSColor(hex: "#184863")
+        label.textColor = AppearancePalette.primaryText
         label.alignment = .center
         let stack = NSStackView(views: [sample, label])
         stack.orientation = .vertical
@@ -633,6 +823,26 @@ private final class TextStyleOptionButton: NSButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let surfaces = AppearancePalette.surfaces(for: effectiveAppearance)
+        layer?.backgroundColor = (
+            isStyleSelected ? surfaces.selectedOption : surfaces.option
+        ).cgColor
+        layer?.borderColor = (
+            isStyleSelected
+                ? AppearancePalette.accent(for: effectiveAppearance)
+                : surfaces.optionBorder
+        ).cgColor
+        layer?.borderWidth = isStyleSelected ? 2 : 1
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }
 
@@ -655,7 +865,7 @@ private final class QuotaTextSampleView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let fontSize: CGFloat = textStyle == .emphasis ? 24 : 20
-        let color = NSColor(hex: "#184863")
+        let color = AppearancePalette.primaryText
         let result: NSAttributedString
         if textStyle == .emphasis {
             let value = NSMutableAttributedString(
@@ -702,6 +912,11 @@ private final class QuotaTextSampleView: NSView {
         result.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
     private static func font(size: CGFloat, style: OrbTextStyle) -> NSFont {
         switch style {
         case .geometric:
@@ -722,7 +937,7 @@ private final class QuotaTextSampleView: NSView {
 private final class ThemedColorPickerWindowController: NSWindowController, NSTextFieldDelegate {
     private let spectrum = ColorSpectrumView(frame: .zero)
     private let hueStrip = HueStripView(frame: .zero)
-    private let preview = NSView()
+    private let preview = AppearanceColorPreviewView(cornerRadius: 13)
     private let hexField = NSTextField(string: "")
     private let redField = NSTextField(string: "")
     private let greenField = NSTextField(string: "")
@@ -743,8 +958,9 @@ private final class ThemedColorPickerWindowController: NSWindowController, NSTex
         )
         panel.title = "自定义取色"
         panel.isReleasedWhenClosed = false
-        panel.backgroundColor = NSColor(hex: "#F7FCFF")
+        panel.backgroundColor = AppearancePalette.canvas
         panel.titlebarAppearsTransparent = true
+        panel.contentView = AppearanceCanvasView(frame: panel.contentView?.frame ?? .zero)
         super.init(window: panel)
         buildContent()
         setSelectedColor(selectedColor)
@@ -762,15 +978,13 @@ private final class ThemedColorPickerWindowController: NSWindowController, NSTex
 
     private func buildContent() {
         guard let content = window?.contentView else { return }
-        content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor(hex: "#F7FCFF").cgColor
 
         let title = NSTextField(labelWithString: "自定义取色")
         title.font = .systemFont(ofSize: 20, weight: .bold)
-        title.textColor = NSColor(hex: "#184863")
+        title.textColor = AppearancePalette.primaryText
         let subtitle = NSTextField(labelWithString: "拖动色面与色相条，或直接输入颜色值")
         subtitle.font = .systemFont(ofSize: 10.5)
-        subtitle.textColor = NSColor(hex: "#5B8299")
+        subtitle.textColor = AppearancePalette.secondaryText
         let header = NSStackView(views: [title, subtitle])
         header.orientation = .vertical
         header.alignment = .leading
@@ -801,10 +1015,6 @@ private final class ThemedColorPickerWindowController: NSWindowController, NSTex
         hueStrip.widthAnchor.constraint(equalTo: pickerStack.widthAnchor).isActive = true
         let pickerCard = makePickerCard(body: pickerStack)
 
-        preview.wantsLayer = true
-        preview.layer?.cornerRadius = 13
-        preview.layer?.borderWidth = 1
-        preview.layer?.borderColor = NSColor(hex: "#A4D5F0").cgColor
         preview.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             preview.widthAnchor.constraint(equalToConstant: 44),
@@ -843,14 +1053,14 @@ private final class ThemedColorPickerWindowController: NSWindowController, NSTex
 
         let hint = NSTextField(labelWithString: "支持 HEX 与 RGB")
         hint.font = .systemFont(ofSize: 10.5)
-        hint.textColor = NSColor(hex: "#5B8299")
+        hint.textColor = AppearancePalette.secondaryText
         let cancel = NSButton(title: "取消", target: self, action: #selector(cancelPicker))
         cancel.keyEquivalent = "\u{1b}"
         cancel.bezelStyle = .rounded
         let confirm = NSButton(title: "确认", target: self, action: #selector(confirmPicker))
         confirm.keyEquivalent = "\r"
         confirm.bezelStyle = .rounded
-        confirm.bezelColor = NSColor(hex: "#2FA4EB")
+        confirm.bezelColor = AppearancePalette.actionFill
         confirm.contentTintColor = .white
         confirm.font = .systemFont(ofSize: 12, weight: .semibold)
         let actions = NSStackView(views: [hint, NSView(), cancel, confirm])
@@ -891,7 +1101,7 @@ private final class ThemedColorPickerWindowController: NSWindowController, NSTex
     private func valueRow(label: String, field: NSTextField) -> NSView {
         let labelField = NSTextField(labelWithString: label)
         labelField.font = .systemFont(ofSize: 10.5, weight: .semibold)
-        labelField.textColor = NSColor(hex: "#5B8299")
+        labelField.textColor = AppearancePalette.secondaryText
         let row = NSStackView(views: [labelField, field])
         row.orientation = .horizontal
         row.alignment = .centerY
@@ -1013,7 +1223,7 @@ private final class ColorSpectrumView: NSView {
         )?.draw(in: bounds, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
 
-        NSColor(hex: "#184863").withAlphaComponent(0.45).setStroke()
+        AppearancePalette.primaryText.withAlphaComponent(0.45).setStroke()
         path.lineWidth = 1
         path.stroke()
         let point = NSPoint(x: saturation * bounds.width, y: (1 - value) * bounds.height)
@@ -1021,6 +1231,11 @@ private final class ColorSpectrumView: NSView {
         NSColor.white.setStroke()
         marker.lineWidth = 2
         marker.stroke()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     override func mouseDown(with event: NSEvent) {

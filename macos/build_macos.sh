@@ -16,8 +16,21 @@ watcher_macos_dir="$watcher_contents_dir/MacOS"
 watcher_plist_path="$watcher_contents_dir/Info.plist"
 arm64_scratch="$script_dir/.build/arm64"
 x86_64_scratch="$script_dir/.build/x86_64"
+swift_build_extra_args=()
+
+if [[ "${TOKENORB_SWIFTPM_DISABLE_SANDBOX:-0}" == "1" ]]; then
+  swift_build_extra_args+=(--disable-sandbox)
+fi
+if [[ -n "${TOKENORB_SWIFT_SDK_PATH:-}" ]]; then
+  if [[ ! -d "$TOKENORB_SWIFT_SDK_PATH" ]]; then
+    printf 'Swift SDK not found: %s\n' "$TOKENORB_SWIFT_SDK_PATH" >&2
+    exit 1
+  fi
+  swift_build_extra_args+=(--sdk "$TOKENORB_SWIFT_SDK_PATH")
+fi
 
 swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
@@ -25,6 +38,7 @@ swift build \
   --product TokenOrb
 
 swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
@@ -32,6 +46,7 @@ swift build \
   --product TokenOrbWatcher
 
 swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
@@ -39,6 +54,7 @@ swift build \
   --product TokenOrbWatcher
 
 swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
@@ -46,6 +62,7 @@ swift build \
   --product TokenOrb
 
 arm64_bin_dir="$(swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
@@ -53,6 +70,7 @@ arm64_bin_dir="$(swift build \
   --show-bin-path)"
 
 x86_64_bin_dir="$(swift build \
+  "${swift_build_extra_args[@]}" \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
@@ -84,8 +102,8 @@ plutil -create xml1 "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleInfoDictionaryVersion string 6.0" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string TokenOrb" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.3" "$plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.3" "$plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.4" "$plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.4" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$plist_path"
 /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$plist_path"
@@ -99,8 +117,8 @@ plutil -create xml1 "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleInfoDictionaryVersion string 6.0" "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string TokenOrb" "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$watcher_plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.3" "$watcher_plist_path"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.3" "$watcher_plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.4" "$watcher_plist_path"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.4" "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$watcher_plist_path"
 /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$watcher_plist_path"

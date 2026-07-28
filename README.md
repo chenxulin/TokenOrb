@@ -1,4 +1,4 @@
-# TokenOrb v1.5.3
+# TokenOrb v1.5.4
 
 TokenOrb 是一个实时监控 Codex 剩余额度的悬浮球小软件。
 

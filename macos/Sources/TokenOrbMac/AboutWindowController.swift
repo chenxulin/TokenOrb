@@ -1,13 +1,72 @@
 import AppKit
 import TokenOrbCore
 
-private final class EscapeClosingPanel: NSPanel {
-    override func cancelOperation(_ sender: Any?) {
-        orderOut(nil)
+private enum AboutPalette {
+    struct Colors {
+        let canvas: NSColor
+        let footer: NSColor
+        let logoHalo: NSColor
+        let logoOrbit: NSColor
+        let logoCoreStroke: NSColor
+    }
+
+    static let canvas = adaptive(
+        light: color(247, 252, 255),
+        dark: color(15, 25, 31)
+    )
+    static let actionFill = adaptive(
+        light: color(20, 125, 187),
+        dark: color(23, 111, 159)
+    )
+
+    static func colors(for appearance: NSAppearance) -> Colors {
+        if isDark(appearance) {
+            return Colors(
+                canvas: color(15, 25, 31),
+                footer: color(21, 38, 46),
+                logoHalo: color(29, 53, 66),
+                logoOrbit: color(137, 187, 213),
+                logoCoreStroke: color(99, 197, 250)
+            )
+        }
+        return Colors(
+            canvas: color(247, 252, 255),
+            footer: color(239, 247, 251),
+            logoHalo: color(239, 248, 255),
+            logoOrbit: color(87, 135, 165),
+            logoCoreStroke: color(53, 128, 174)
+        )
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            isDark(appearance) ? dark : light
+        }
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    private static func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+        NSColor(
+            srgbRed: red / 255,
+            green: green / 255,
+            blue: blue / 255,
+            alpha: 1
+        )
     }
 }
 
-final class AboutWindowController: NSWindowController {
+private final class EscapeClosingPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
+}
+
+final class AboutWindowController: NSWindowController, NSWindowDelegate {
     init() {
         let panel = EscapeClosingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 452),
@@ -17,8 +76,18 @@ final class AboutWindowController: NSWindowController {
         )
         panel.title = "关于 \(AppIdentity.productName)"
         panel.isReleasedWhenClosed = false
-        panel.level = .floating
+        panel.level = .normal
+        panel.hidesOnDeactivate = false
+        panel.backgroundColor = AboutPalette.canvas
+        panel.contentView = AboutSurfaceView(
+            style: .canvas,
+            frame: panel.contentView?.frame ?? .zero
+        )
         super.init(window: panel)
+        panel.delegate = self
+        panel.onCancel = { [weak self] in
+            self?.hide()
+        }
         buildContent()
     }
 
@@ -28,15 +97,25 @@ final class AboutWindowController: NSWindowController {
     }
 
     func show() {
-        window?.center()
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        if !window.isVisible {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func hide() {
+        window?.orderOut(nil)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        hide()
+        return false
     }
 
     private func buildContent() {
         guard let content = window?.contentView else { return }
-        content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor.white.cgColor
 
         let logo = TokenOrbLogoView()
         logo.translatesAutoresizingMaskIntoConstraints = false
@@ -59,9 +138,7 @@ final class AboutWindowController: NSWindowController {
         identity.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(identity)
 
-        let footer = NSView()
-        footer.wantsLayer = true
-        footer.layer?.backgroundColor = NSColor(srgbRed: 248 / 255, green: 248 / 255, blue: 248 / 255, alpha: 1).cgColor
+        let footer = AboutSurfaceView(style: .footer)
         footer.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(footer)
 
@@ -73,6 +150,9 @@ final class AboutWindowController: NSWindowController {
         let confirm = NSButton(title: "确定", target: self, action: #selector(closeWindow))
         confirm.keyEquivalent = "\r"
         confirm.bezelStyle = .rounded
+        confirm.bezelColor = AboutPalette.actionFill
+        confirm.contentTintColor = .white
+        confirm.font = .systemFont(ofSize: 12, weight: .semibold)
         confirm.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(confirm)
 
@@ -110,7 +190,41 @@ final class AboutWindowController: NSWindowController {
     }
 
     @objc private func closeWindow() {
-        window?.orderOut(nil)
+        hide()
+    }
+}
+
+private final class AboutSurfaceView: NSView {
+    enum Style {
+        case canvas
+        case footer
+    }
+
+    private let style: Style
+
+    init(style: Style, frame: NSRect = .zero) {
+        self.style = style
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let colors = AboutPalette.colors(for: effectiveAppearance)
+        layer?.backgroundColor = (
+            style == .canvas ? colors.canvas : colors.footer
+        ).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 }
 
@@ -122,8 +236,9 @@ private final class TokenOrbLogoView: NSView {
         let size = min(bounds.width, bounds.height)
         let scale = size / 84
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let colors = AboutPalette.colors(for: effectiveAppearance)
 
-        NSColor(srgbRed: 239 / 255, green: 248 / 255, blue: 1, alpha: 1).setFill()
+        colors.logoHalo.setFill()
         NSBezierPath(
             ovalIn: NSRect(
                 x: center.x - 38 * scale,
@@ -133,7 +248,6 @@ private final class TokenOrbLogoView: NSView {
             )
         ).fill()
 
-        let ringColor = NSColor(srgbRed: 87 / 255, green: 135 / 255, blue: 165 / 255, alpha: 1)
         let orbitAngles: [CGFloat] = [0, 60, 120]
         for angle in orbitAngles {
             NSGraphicsContext.saveGraphicsState()
@@ -150,7 +264,7 @@ private final class TokenOrbLogoView: NSView {
                     )
                 )
                 orbit.lineWidth = max(1.6, 2.7 * scale)
-                ringColor.setStroke()
+                colors.logoOrbit.setStroke()
                 orbit.stroke()
             }
             NSGraphicsContext.restoreGraphicsState()
@@ -193,7 +307,7 @@ private final class TokenOrbLogoView: NSView {
             context.restoreGState()
         }
         core.lineWidth = max(1.2, 1.8 * scale)
-        NSColor(srgbRed: 53 / 255, green: 128 / 255, blue: 174 / 255, alpha: 1).setStroke()
+        colors.logoCoreStroke.setStroke()
         core.stroke()
         drawElectron(
             at: NSPoint(x: center.x + 28 * scale, y: center.y - 7 * scale),
@@ -207,6 +321,11 @@ private final class TokenOrbLogoView: NSView {
             color: NSColor(srgbRed: 119 / 255, green: 213 / 255, blue: 244 / 255, alpha: 1),
             scale: scale
         )
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     private func drawElectron(at center: NSPoint, radius: CGFloat, color: NSColor, scale: CGFloat) {

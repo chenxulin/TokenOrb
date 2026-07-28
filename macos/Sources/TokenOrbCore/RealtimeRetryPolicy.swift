@@ -1,5 +1,10 @@
 import Foundation
 
+public enum AppServerLivenessPolicy {
+    public static let initializeTimeout: TimeInterval = 15
+    public static let rateLimitsTimeout: TimeInterval = 15
+}
+
 public struct RealtimeRetryPolicy: Sendable {
     public static let restartRetryCount = 3
     public static let fallbackFailureThreshold = restartRetryCount + 1
