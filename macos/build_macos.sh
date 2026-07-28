@@ -29,48 +29,50 @@ if [[ -n "${TOKENORB_SWIFT_SDK_PATH:-}" ]]; then
   swift_build_extra_args+=(--sdk "$TOKENORB_SWIFT_SDK_PATH")
 fi
 
-swift build \
-  "${swift_build_extra_args[@]}" \
+run_swift_build() {
+  if (( ${#swift_build_extra_args[@]} > 0 )); then
+    swift build "${swift_build_extra_args[@]}" "$@"
+  else
+    swift build "$@"
+  fi
+}
+
+run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
   --scratch-path "$arm64_scratch" \
   --product TokenOrb
 
-swift build \
-  "${swift_build_extra_args[@]}" \
+run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
   --scratch-path "$arm64_scratch" \
   --product TokenOrbWatcher
 
-swift build \
-  "${swift_build_extra_args[@]}" \
+run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
   --scratch-path "$x86_64_scratch" \
   --product TokenOrbWatcher
 
-swift build \
-  "${swift_build_extra_args[@]}" \
+run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
   --scratch-path "$x86_64_scratch" \
   --product TokenOrb
 
-arm64_bin_dir="$(swift build \
-  "${swift_build_extra_args[@]}" \
+arm64_bin_dir="$(run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch arm64 \
   --scratch-path "$arm64_scratch" \
   --show-bin-path)"
 
-x86_64_bin_dir="$(swift build \
-  "${swift_build_extra_args[@]}" \
+x86_64_bin_dir="$(run_swift_build \
   --package-path "$script_dir" \
   --configuration release \
   --arch x86_64 \
