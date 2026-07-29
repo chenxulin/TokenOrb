@@ -299,7 +299,8 @@ namespace CodexQuotaBall
 
     public static class AppSettings
     {
-        private const string RunValueName = "Token Orb";
+        private const string RunValueName = "TokenOrb";
+        private const string PreviousRunValueName = "Token Orb";
         private const string LegacyRunValueName = "CodexQuotaBall";
 #if QA
         private const string WatcherExitEventName = "Local\\CodexQuotaBall.QA.WatcherExit";
@@ -324,24 +325,36 @@ namespace CodexQuotaBall
                 return Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 #if QA
-                    "Token Orb-QA");
+                    "TokenOrb-QA");
 #else
-                    "Token Orb");
+                    "TokenOrb");
 #endif
             }
         }
 
-        private static string LegacyAppDataDirectory
+        private static string[] PreviousAppDataDirectories
         {
             get
             {
-                return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                string localApplicationData = Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData);
+                return new string[]
+                {
+                    Path.Combine(
+                        localApplicationData,
 #if QA
-                    "CodexQuotaBall-QA");
+                        "Token Orb-QA"),
 #else
-                    "CodexQuotaBall");
+                        "Token Orb"),
 #endif
+                    Path.Combine(
+                        localApplicationData,
+#if QA
+                        "CodexQuotaBall-QA")
+#else
+                        "CodexQuotaBall")
+#endif
+                };
             }
         }
 
@@ -368,8 +381,27 @@ namespace CodexQuotaBall
                 return current;
             }
 
-            string legacy = Path.Combine(LegacyAppDataDirectory, fileName);
-            return File.Exists(legacy) ? legacy : current;
+            foreach (string directory in PreviousAppDataDirectories)
+            {
+                string previous = Path.Combine(directory, fileName);
+                if (File.Exists(previous))
+                {
+                    return previous;
+                }
+            }
+            return current;
+        }
+
+        private static bool HasPreviousSettingsFile(string fileName)
+        {
+            foreach (string directory in PreviousAppDataDirectories)
+            {
+                if (File.Exists(Path.Combine(directory, fileName)))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public static BallAppearanceSettings LoadAppearance()
@@ -538,12 +570,9 @@ namespace CodexQuotaBall
 
         public static void InitializeFollowCodexDefault()
         {
-            string legacyPreference = Path.Combine(
-                LegacyAppDataDirectory,
-                "follow-codex.txt");
             if (!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(
                 File.Exists(FollowCodexFile),
-                File.Exists(legacyPreference)))
+                HasPreviousSettingsFile("follow-codex.txt")))
             {
                 return;
             }
@@ -642,6 +671,7 @@ namespace CodexQuotaBall
                 {
                     key.DeleteValue(RunValueName, false);
                 }
+                key.DeleteValue(PreviousRunValueName, false);
                 key.DeleteValue(LegacyRunValueName, false);
             }
         }

@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product
       Id="*"
-      Name="Token Orb"
+      Name="TokenOrb"
       Language="2052"
       Codepage="936"
       Version="1.5.4"
@@ -18,7 +18,7 @@
     <MajorUpgrade
         Schedule="afterInstallInitialize"
         AllowSameVersionUpgrades="yes"
-        DowngradeErrorMessage="已安装更高版本的 Token Orb，无法降级安装。" />
+        DowngradeErrorMessage="已安装更高版本的 TokenOrb，无法降级安装。" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <CustomAction
@@ -51,7 +51,7 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
         <Directory Id="LocalProgramsFolder" Name="Programs">
-          <Directory Id="INSTALLFOLDER" Name="Token Orb">
+          <Directory Id="INSTALLFOLDER" Name="TokenOrb">
             <Component Id="TokenOrbExecutableComponent" Guid="{4BA374EF-E1D9-48DD-849D-F89C8AE2657E}">
               <File
                   Id="TokenOrbExecutable"
@@ -60,7 +60,7 @@
                   Checksum="yes" />
               <RegistryValue
                   Root="HKCU"
-                  Key="Software\chenxulin\Token Orb"
+                  Key="Software\chenxulin\TokenOrb"
                   Name="InstallPath"
                   Type="string"
                   Value="[#TokenOrbExecutable]"
@@ -75,7 +75,7 @@
               <RegistryValue
                   Root="HKCU"
                   Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                  Name="Token Orb"
+                  Name="TokenOrb"
                   Type="string"
                   Value="&quot;[INSTALLFOLDER]TokenOrb.exe&quot; --watch"
                   KeyPath="yes" />
@@ -84,17 +84,22 @@
                   Root="HKCU"
                   Key="Software\Microsoft\Windows\CurrentVersion\Run"
                   Name="CodexQuotaBall" />
+              <RemoveRegistryValue
+                  Id="RemovePreviousAutoStart"
+                  Root="HKCU"
+                  Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                  Name="Token Orb" />
             </Component>
           </Directory>
         </Directory>
       </Directory>
 
       <Directory Id="ProgramMenuFolder">
-        <Directory Id="TokenOrbProgramMenuFolder" Name="Token Orb">
+        <Directory Id="TokenOrbProgramMenuFolder" Name="TokenOrb">
           <Component Id="TokenOrbShortcutComponent" Guid="*">
             <Shortcut
                 Id="TokenOrbStartMenuShortcut"
-                Name="Token Orb"
+                Name="TokenOrb"
                 Description="Codex quota at a glance"
                 Target="[INSTALLFOLDER]TokenOrb.exe"
                 WorkingDirectory="INSTALLFOLDER"
@@ -102,7 +107,7 @@
             <RemoveFolder Id="RemoveTokenOrbProgramMenuFolder" On="uninstall" />
             <RegistryValue
                 Root="HKCU"
-                Key="Software\chenxulin\Token Orb"
+                Key="Software\chenxulin\TokenOrb"
                 Name="StartMenuShortcut"
                 Type="integer"
                 Value="1"
@@ -112,7 +117,7 @@
       </Directory>
     </Directory>
 
-    <Feature Id="TokenOrbFeature" Title="Token Orb" Level="1" Absent="disallow">
+    <Feature Id="TokenOrbFeature" Title="TokenOrb" Level="1" Absent="disallow">
       <ComponentRef Id="TokenOrbExecutableComponent" />
       <ComponentRef Id="TokenOrbAutoStartComponent" />
       <ComponentRef Id="TokenOrbShortcutComponent" />

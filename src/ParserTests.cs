@@ -442,7 +442,7 @@ namespace CodexQuotaBall
             Assert(FollowCodexStartupBehavior.ShouldCreateDefaultPreference(false, false),
                 "A fresh install should enable the login watcher by default");
             Assert(!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(true, false),
-                "An existing Token Orb preference should be preserved");
+                "An existing TokenOrb preference should be preserved");
             Assert(!FollowCodexStartupBehavior.ShouldCreateDefaultPreference(false, true),
                 "A legacy preference should be preserved during migration");
         }

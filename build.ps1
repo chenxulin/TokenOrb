@@ -330,6 +330,13 @@ $wixSource = Join-Path (Join-Path $projectRoot "installer") "TokenOrb.wxs"
 $wixNamespace = New-Object System.Xml.XmlNamespaceManager($wixDocument.NameTable)
 $wixNamespace.AddNamespace("w", "http://schemas.microsoft.com/wix/2006/wi")
 $product = $wixDocument.SelectSingleNode("//w:Product", $wixNamespace)
+$installDirectory = $wixDocument.SelectSingleNode("//w:Directory[@Id='INSTALLFOLDER']", $wixNamespace)
+$programMenuDirectory = $wixDocument.SelectSingleNode(
+    "//w:Directory[@Id='TokenOrbProgramMenuFolder']",
+    $wixNamespace)
+$startMenuShortcut = $wixDocument.SelectSingleNode(
+    "//w:Shortcut[@Id='TokenOrbStartMenuShortcut']",
+    $wixNamespace)
 $majorUpgrade = $wixDocument.SelectSingleNode("//w:Product/w:MajorUpgrade", $wixNamespace)
 $setStopCommand = $wixDocument.SelectSingleNode(
     "//w:Product/w:CustomAction[@Id='SetStopTokenOrbCommand']",
@@ -342,6 +349,12 @@ $stopSequence = $wixDocument.SelectSingleNode(
     $wixNamespace)
 if ((-not $product) -or ($product.Id -ne "*")) {
     throw "MSI Product Id must be '*' so every release receives a new ProductCode."
+}
+if (($product.Name -ne "TokenOrb") -or
+    (-not $installDirectory) -or ($installDirectory.Name -ne "TokenOrb") -or
+    (-not $programMenuDirectory) -or ($programMenuDirectory.Name -ne "TokenOrb") -or
+    (-not $startMenuShortcut) -or ($startMenuShortcut.Name -ne "TokenOrb")) {
+    throw "MSI product, installation, and Start menu names must be TokenOrb."
 }
 if ($product.UpgradeCode -ne "{E2EE802B-B7DD-4436-ADF1-A3DF49DCD07A}") {
     throw "MSI UpgradeCode must remain stable so new releases can find installed versions."
@@ -362,7 +375,7 @@ if ((-not $setStopCommand) -or
     (-not $stopSequence) -or
     ($stopSequence.Before -ne "InstallValidate") -or
     ($stopSequence.InnerText -notmatch "WIX_UPGRADE_DETECTED")) {
-    throw "MSI must close a running Token Orb before replacing an installed version."
+    throw "MSI must close a running TokenOrb before replacing an installed version."
 }
 $identitySource = Get-Content -Raw -LiteralPath (Join-Path $sourceDirectory "AppIdentity.cs")
 $protocolVersionMatch = [regex]::Match(
@@ -373,12 +386,12 @@ if ((-not $protocolVersionMatch.Success) -or
     throw "MSI Product Version must match AppIdentity.ProtocolVersion."
 }
 $autoStartValue = $wixDocument.SelectSingleNode(
-    "//w:Component[@Id='TokenOrbAutoStartComponent']/w:RegistryValue[@Name='Token Orb']",
+    "//w:Component[@Id='TokenOrbAutoStartComponent']/w:RegistryValue[@Name='TokenOrb']",
     $wixNamespace)
 if ((-not $autoStartValue) -or
     ($autoStartValue.KeyPath -ne "yes") -or
     ($autoStartValue.Value -notlike "*--watch*")) {
-    throw "MSI must track the Token Orb --watch login entry as its own component key path."
+    throw "MSI must track the TokenOrb --watch login entry as its own component key path."
 }
 $wixObject = Join-Path $buildDirectory "TokenOrb.wixobj"
 $msiPath = Join-Path $OutputDirectory "TokenOrb-Windows.msi"
