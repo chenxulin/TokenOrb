@@ -10,8 +10,6 @@ TokenOrb 是一个实时监控 Codex 剩余额度的悬浮球小软件。
 
 ## macOS 安装
 
-适用于 macOS 13 及更新版本，支持 Apple Silicon 和 Intel Mac。
-
 1. 从右侧 Release 下载 `TokenOrb-macOS.dmg`，下载完成后双击打开。
 2. 在安装窗口中，将 `TokenOrb` 拖到“Applications（应用程序）”文件夹。请不要直接在 DMG 中运行。
 3. 打开 Finder 的“应用程序”文件夹，双击 `TokenOrb`。首次打开时，macOS 会阻止应用运行；看到提示后关闭提示窗口即可。
