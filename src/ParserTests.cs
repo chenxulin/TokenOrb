@@ -22,6 +22,7 @@ namespace CodexQuotaBall
                 TestRealtimeRetryPolicy();
                 TestLocalFallbackStatePolicy();
                 TestWindowNames();
+                TestOrbDisplayWindowPriority();
                 TestCodexDesktopProcessMatching();
                 TestFollowCodexStartupDefaults();
                 TestWatcherTrayBehavior();
@@ -241,6 +242,39 @@ namespace CodexQuotaBall
             Assert(QuotaSnapshot.FormatWindowName(new QuotaWindowInfo { WindowMinutes = 300 }) == "5小时", "Five-hour label");
             Assert(QuotaSnapshot.FormatWindowName(new QuotaWindowInfo { WindowMinutes = 10080 }) == "7天", "Weekly label");
             Assert(QuotaSnapshot.FormatWindowName(new QuotaWindowInfo { WindowMinutes = 90 }) == "90分钟", "Minute label");
+        }
+
+        private static void TestOrbDisplayWindowPriority()
+        {
+            QuotaSnapshot bothWindows = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 95, WindowMinutes = 10080 },
+                Secondary = new QuotaWindowInfo { UsedPercent = 80, WindowMinutes = 300 }
+            };
+            Assert(bothWindows.OrbDisplayWindow == bothWindows.Secondary,
+                "Orb should prefer the five-hour window over a non-empty weekly window");
+
+            QuotaSnapshot depletedWeekly = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 100, WindowMinutes = 10080 },
+                Secondary = new QuotaWindowInfo { UsedPercent = 80, WindowMinutes = 300 }
+            };
+            Assert(depletedWeekly.OrbDisplayWindow == depletedWeekly.Primary,
+                "Orb should show the weekly window when its remaining quota is zero");
+
+            QuotaSnapshot weeklyOnly = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 20, WindowMinutes = 10080 }
+            };
+            Assert(weeklyOnly.OrbDisplayWindow == weeklyOnly.Primary,
+                "Orb should show the weekly window when the five-hour window is absent");
+
+            QuotaSnapshot fiveHourOnly = new QuotaSnapshot
+            {
+                Primary = new QuotaWindowInfo { UsedPercent = 20, WindowMinutes = 300 }
+            };
+            Assert(fiveHourOnly.OrbDisplayWindow == fiveHourOnly.Primary,
+                "Orb should show the five-hour window when it is the only known window");
         }
 
         private static void TestCodexDesktopProcessMatching()
@@ -562,8 +596,8 @@ namespace CodexQuotaBall
 
         private static void TestDepletedBallBorder()
         {
-            Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Blue, 0.0) == UiPalette.Red,
-                "Zero-percent outer border should use the low-quota red");
+            Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Blue, 0.0) == UiPalette.OuterRingBlue,
+                "Zero-percent outer border should retain the light-blue breathing ring");
             Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Blue, 0.01) == UiPalette.OuterRingBlue,
                 "Positive quota should use the light-blue outer border");
             Assert(QuotaBallVisual.ResolveOuterBorderColor(UiPalette.Amber, null) == UiPalette.OuterRingBlue,

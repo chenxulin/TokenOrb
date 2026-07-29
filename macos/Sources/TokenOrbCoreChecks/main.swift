@@ -107,6 +107,50 @@ func checkSparseMerge() {
     expect(merged.source == "push", "source update")
 }
 
+func checkOrbDisplayWindowPriority() {
+    let bothWindows = QuotaSnapshot(
+        primary: QuotaWindow(usedPercent: 95, windowMinutes: 10_080),
+        secondary: QuotaWindow(usedPercent: 80, windowMinutes: 300),
+        source: "test",
+        isLive: true
+    )
+    expect(
+        bothWindows.orbDisplayWindow?.windowMinutes == 300,
+        "orb should prefer the five-hour window over a non-empty weekly window"
+    )
+
+    let depletedWeekly = QuotaSnapshot(
+        primary: QuotaWindow(usedPercent: 100, windowMinutes: 10_080),
+        secondary: QuotaWindow(usedPercent: 80, windowMinutes: 300),
+        source: "test",
+        isLive: true
+    )
+    expect(
+        depletedWeekly.orbDisplayWindow?.windowMinutes == 10_080,
+        "orb should show the weekly window when its remaining quota is zero"
+    )
+
+    let weeklyOnly = QuotaSnapshot(
+        primary: QuotaWindow(usedPercent: 20, windowMinutes: 10_080),
+        source: "test",
+        isLive: true
+    )
+    expect(
+        weeklyOnly.orbDisplayWindow?.windowMinutes == 10_080,
+        "orb should show the weekly window when the five-hour window is absent"
+    )
+
+    let fiveHourOnly = QuotaSnapshot(
+        primary: QuotaWindow(usedPercent: 20, windowMinutes: 300),
+        source: "test",
+        isLive: true
+    )
+    expect(
+        fiveHourOnly.orbDisplayWindow?.windowMinutes == 300,
+        "orb should show the five-hour window when it is the only known window"
+    )
+}
+
 func checkNestedRateLimits() {
     let message: [String: Any] = [
         "result": [
@@ -722,6 +766,7 @@ func checkLocalSnapshotReader() {
 checkCamelCaseRateLimits()
 checkSnakeCaseLocalEvent()
 checkSparseMerge()
+checkOrbDisplayWindowPriority()
 checkNestedRateLimits()
 checkFormatting()
 checkAppIdentity()

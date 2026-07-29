@@ -83,7 +83,7 @@ final class OrbPanelController {
     }
 
     func update(snapshot: QuotaSnapshot?, connected: Bool) {
-        let remaining = snapshot?.mostRestrictiveWindow?.remainingPercent
+        let remaining = snapshot?.orbDisplayWindow?.remainingPercent
         orbView.update(
             remainingPercent: remaining,
             accentColor: settings.accentColor,
@@ -374,7 +374,7 @@ final class OrbView: NSView {
         let bodyPath = NSBezierPath(ovalIn: bodyRect)
         drawBodyShadow(path: bodyPath, size: size)
 
-        let borderColor = depleted ? OrbPalette.red : OrbPalette.outerRingBlue
+        let borderColor = OrbPalette.outerRingBlue
         let borderWidth = CGFloat(
             OrbVisualMetrics.outerBorderWidth(size: Double(size), depleted: depleted)
         )

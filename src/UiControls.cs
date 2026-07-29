@@ -218,7 +218,7 @@ namespace CodexQuotaBall
 
             Point center = new Point(ActualWidth / 2.0, ActualHeight / 2.0);
             double outerRadius = Math.Max(6.0, size / 2.0 - Math.Max(2.2, size * 0.092));
-            QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.MostRestrictiveWindow;
+            QuotaWindowInfo limitingWindow = snapshot == null ? null : snapshot.OrbDisplayWindow;
             double remaining = limitingWindow == null ? 0.0 : limitingWindow.RemainingPercent;
             double waveRemaining = limitingWindow == null
                 ? WaitingWaveRemainingPercent
@@ -446,10 +446,6 @@ namespace CodexQuotaBall
 
         internal static Color ResolveOuterBorderColor(Color appearanceAccent, double? remaining)
         {
-            if (remaining.HasValue && remaining.Value <= 0.0)
-            {
-                return UiPalette.Red;
-            }
             return UiPalette.OuterRingBlue;
         }
 

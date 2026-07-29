@@ -59,6 +59,9 @@ public struct QuotaCredits: Equatable, Sendable {
 }
 
 public struct QuotaSnapshot: Equatable, Sendable {
+    private static let fiveHourWindowMinutes = 5 * 60
+    private static let weeklyWindowMinutes = 7 * 24 * 60
+
     public var limitID: String?
     public var limitName: String?
     public var primary: QuotaWindow?
@@ -113,6 +116,25 @@ public struct QuotaSnapshot: Equatable, Sendable {
                 }
                 return $0.remainingPercent < $1.remainingPercent
             }
+    }
+
+    public var orbDisplayWindow: QuotaWindow? {
+        let windows = [primary, secondary]
+            .compactMap { $0 }
+            .filter { $0.usedPercent != nil }
+        let fiveHour = windows.first { $0.windowMinutes == Self.fiveHourWindowMinutes }
+        let weekly = windows.first { $0.windowMinutes == Self.weeklyWindowMinutes }
+
+        if let weekly, weekly.remainingPercent <= 0 {
+            return weekly
+        }
+        if let fiveHour {
+            return fiveHour
+        }
+        if let weekly {
+            return weekly
+        }
+        return mostRestrictiveWindow
     }
 
     public func merged(with update: QuotaSnapshot) -> QuotaSnapshot {

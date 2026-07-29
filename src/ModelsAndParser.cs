@@ -98,6 +98,9 @@ namespace CodexQuotaBall
 
     public sealed class QuotaSnapshot
     {
+        private const int FiveHourWindowMinutes = 5 * 60;
+        private const int WeeklyWindowMinutes = 7 * 24 * 60;
+
         public string LimitId { get; set; }
         public string LimitName { get; set; }
         public QuotaWindowInfo Primary { get; set; }
@@ -144,6 +147,49 @@ namespace CodexQuotaBall
                     .ThenBy(w => w.WindowMinutes.HasValue ? w.WindowMinutes.Value : Int32.MaxValue)
                     .First();
             }
+        }
+
+        public QuotaWindowInfo OrbDisplayWindow
+        {
+            get
+            {
+                QuotaWindowInfo fiveHour = FindDisplayableWindow(FiveHourWindowMinutes);
+                QuotaWindowInfo weekly = FindDisplayableWindow(WeeklyWindowMinutes);
+
+                if (weekly != null && weekly.RemainingPercent <= 0.0)
+                {
+                    return weekly;
+                }
+                if (fiveHour != null)
+                {
+                    return fiveHour;
+                }
+                if (weekly != null)
+                {
+                    return weekly;
+                }
+
+                return MostRestrictiveWindow;
+            }
+        }
+
+        private QuotaWindowInfo FindDisplayableWindow(int windowMinutes)
+        {
+            if (Primary != null
+                && Primary.UsedPercent.HasValue
+                && Primary.WindowMinutes.HasValue
+                && Primary.WindowMinutes.Value == windowMinutes)
+            {
+                return Primary;
+            }
+            if (Secondary != null
+                && Secondary.UsedPercent.HasValue
+                && Secondary.WindowMinutes.HasValue
+                && Secondary.WindowMinutes.Value == windowMinutes)
+            {
+                return Secondary;
+            }
+            return null;
         }
 
         public QuotaSnapshot Clone()
