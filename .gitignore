@@ -18,6 +18,7 @@
 /.vscode/
 /.codex/
 /.agents/
+/.planning/
 /.serena/
 /macos/.build/
 /macos/dist/
