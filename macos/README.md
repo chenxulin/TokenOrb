@@ -69,13 +69,26 @@ open "macos/dist/TokenOrb.app"
 开发模式可用演示数据启动，不会调用 Codex：
 
 ```bash
-swift run --package-path macos TokenOrb --demo
+bash macos/swiftpm.sh run TokenOrb --demo
 ```
 
 ## 校验
 
 ```bash
-swift run --package-path macos TokenOrbCoreChecks
+bash macos/swiftpm.sh run TokenOrbCoreChecks
+```
+
+`swiftpm.sh` 会优先使用当前 `xcrun` 选择的 Apple Swift 工具链，并把 SwiftPM 与
+Clang 模块缓存放到 `macos/.build` 下。在受管或嵌套沙箱环境中，它会自动关闭
+不可用的 SwiftPM 内部沙箱，避免 `SwiftShims` 缓存失败被误报为 Swift
+编译器与 macOS SDK 小版本不匹配。
+
+需要手动覆盖时可使用：
+
+```bash
+TOKENORB_SWIFT_EXEC="/path/to/swift" \
+TOKENORB_SWIFT_SDK_PATH="/path/to/MacOSX.sdk" \
+bash macos/swiftpm.sh run TokenOrbCoreChecks
 ```
 
 ## Codex CLI 查找

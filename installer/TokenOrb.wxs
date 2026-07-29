@@ -5,7 +5,7 @@
       Name="TokenOrb"
       Language="2052"
       Codepage="936"
-      Version="1.5.4"
+      Version="1.6.0"
       Manufacturer="chenxulin"
       UpgradeCode="{E2EE802B-B7DD-4436-ADF1-A3DF49DCD07A}">
     <Package
@@ -13,7 +13,7 @@
         Compressed="yes"
         InstallScope="perUser"
         InstallPrivileges="limited"
-        Description="TokenOrb v1.5.4 installer" />
+        Description="TokenOrb v1.6.0 installer" />
 
     <MajorUpgrade
         Schedule="afterInstallInitialize"

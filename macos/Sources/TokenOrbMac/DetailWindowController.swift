@@ -7,6 +7,18 @@ private final class EscapeClosingDetailPanel: NSPanel {
     }
 }
 
+private enum DetailLayout {
+    static let contentWidth: CGFloat = 344
+    static let contentHeightWithoutQuotaCards: CGFloat = 160
+    static let quotaCardHeight: CGFloat = 100
+    static let stackSpacing: CGFloat = 12
+
+    static func contentHeight(visibleQuotaCards: Int) -> CGFloat {
+        contentHeightWithoutQuotaCards
+            + CGFloat(visibleQuotaCards) * (quotaCardHeight + stackSpacing)
+    }
+}
+
 private enum DetailPalette {
     struct Surfaces {
         let card: NSColor
@@ -191,7 +203,12 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
 
     init() {
         let panel = EscapeClosingDetailPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 344, height: 430),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: DetailLayout.contentWidth,
+                height: DetailLayout.contentHeight(visibleQuotaCards: 2)
+            ),
             styleMask: [.titled, .closable, .fullSizeContentView, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -249,7 +266,10 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
             .compactMap { $0 }
             .filter { $0.usedPercent != nil }
             .count
-        window?.setContentSize(NSSize(width: 344, height: CGFloat(192 + visibleCards * 104)))
+        window?.setContentSize(NSSize(
+            width: DetailLayout.contentWidth,
+            height: DetailLayout.contentHeight(visibleQuotaCards: visibleCards)
+        ))
     }
 
     func refreshTimeLabels(now: Date = Date()) {
@@ -389,7 +409,7 @@ final class DetailWindowController: NSWindowController, NSWindowDelegate {
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = DetailLayout.stackSpacing
         stack.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(stack)
 
@@ -475,7 +495,7 @@ private final class QuotaCardView: NSView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 100),
+            heightAnchor.constraint(equalToConstant: DetailLayout.quotaCardHeight),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),

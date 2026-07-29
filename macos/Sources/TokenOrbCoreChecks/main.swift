@@ -149,6 +149,16 @@ func checkOrbDisplayWindowPriority() {
         fiveHourOnly.orbDisplayWindow?.windowMinutes == 300,
         "orb should show the five-hour window when it is the only known window"
     )
+
+    let unsupportedWindow = QuotaSnapshot(
+        primary: QuotaWindow(usedPercent: 90, windowMinutes: 60),
+        source: "test",
+        isLive: true
+    )
+    expect(
+        unsupportedWindow.orbDisplayWindow == nil,
+        "orb should not fall back to an unsupported quota window"
+    )
 }
 
 func checkNestedRateLimits() {
@@ -259,8 +269,8 @@ func checkAppIdentity() {
         AppIdentity.watcherBundleIdentifier == "com.chenxulin.TokenOrb.Watcher",
         "watcher bundle identifier"
     )
-    expect(AppIdentity.displayVersion == "v1.5.4", "display version")
-    expect(AppIdentity.protocolVersion == "1.5.4", "protocol version")
+    expect(AppIdentity.displayVersion == "v1.6.0", "display version")
+    expect(AppIdentity.protocolVersion == "1.6.0", "protocol version")
     expect(AppIdentity.publisher == "chenxulin", "publisher")
 }
 

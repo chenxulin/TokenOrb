@@ -126,7 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.showDetails()
         }
         orbController.menuProvider = { [weak self] in
-            self?.makeMenu(includeAbout: false)
+            guard let self else { return nil }
+            self.detailController.hide()
+            return self.makeMenu(includeAbout: false)
         }
         appearanceController.onChange = { [weak self] in
             self?.orbController.applyAppearance()
@@ -450,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Keep diagnostics and the follow toggle reachable while waiting.
         statusItem?.isVisible = true
         guard let button = statusItem?.button else { return }
-        let percent = snapshot?.mostRestrictiveWindow?.remainingPercent
+        let percent = snapshot?.orbDisplayWindow?.remainingPercent
         button.title = percent.map { " \(QuotaFormatting.roundedPercent($0))%" }
             ?? (settings.followCodex && !processMonitor.isRunning ? " 等待 Codex" : " —")
         button.image = statusImage(color: settings.accentColor, connected: connected)

@@ -106,18 +106,6 @@ public struct QuotaSnapshot: Equatable, Sendable {
             || credits != nil
     }
 
-    public var mostRestrictiveWindow: QuotaWindow? {
-        [primary, secondary]
-            .compactMap { $0 }
-            .filter { $0.usedPercent != nil }
-            .min {
-                if $0.remainingPercent == $1.remainingPercent {
-                    return ($0.windowMinutes ?? .max) < ($1.windowMinutes ?? .max)
-                }
-                return $0.remainingPercent < $1.remainingPercent
-            }
-    }
-
     public var orbDisplayWindow: QuotaWindow? {
         let windows = [primary, secondary]
             .compactMap { $0 }
@@ -134,7 +122,7 @@ public struct QuotaSnapshot: Equatable, Sendable {
         if let weekly {
             return weekly
         }
-        return mostRestrictiveWindow
+        return nil
     }
 
     public func merged(with update: QuotaSnapshot) -> QuotaSnapshot {

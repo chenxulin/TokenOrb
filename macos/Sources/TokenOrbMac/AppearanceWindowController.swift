@@ -1,6 +1,16 @@
 import AppKit
 import TokenOrbCore
 
+private enum AppearanceLayout {
+    static let windowWidth: CGFloat = 740
+    static let windowHeight: CGFloat = 424
+    static let horizontalInset: CGFloat = 24
+    static let verticalInset: CGFloat = 18
+    static let sectionSpacing: CGFloat = 10
+    static let actionButtonWidth: CGFloat = 96
+    static let actionButtonHeight: CGFloat = 28
+}
+
 private enum AppearancePalette {
     struct Surfaces {
         let canvas: NSColor
@@ -140,12 +150,18 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         )
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 740, height: 470),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: AppearanceLayout.windowWidth,
+                height: AppearanceLayout.windowHeight
+            ),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
             defer: false
         )
         panel.title = "个性化外观"
+        panel.titleVisibility = .hidden
         panel.isReleasedWhenClosed = false
         panel.level = .normal
         panel.hidesOnDeactivate = false
@@ -186,7 +202,7 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         guard let content = window?.contentView else { return }
 
         let heading = NSTextField(labelWithString: "个性化外观")
-        heading.font = .systemFont(ofSize: 22, weight: .bold)
+        heading.font = .systemFont(ofSize: 20, weight: .bold)
         heading.textColor = AppearancePalette.primaryText
         let subtitle = NSTextField(labelWithString: "调整尺寸、主题色、数字样式和动画帧率")
         subtitle.font = .systemFont(ofSize: 11.5)
@@ -195,7 +211,6 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         headingStack.orientation = .vertical
         headingStack.alignment = .leading
         headingStack.spacing = 4
-        headingStack.edgeInsets = NSEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
 
         sizeSlider.isContinuous = true
         sizeSlider.target = self
@@ -236,14 +251,14 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         let leftColumn = NSStackView(views: [sizeCard, colorCard])
         leftColumn.orientation = .vertical
         leftColumn.alignment = .leading
-        leftColumn.spacing = 10
+        leftColumn.spacing = AppearanceLayout.sectionSpacing
         sizeCard.widthAnchor.constraint(equalTo: leftColumn.widthAnchor).isActive = true
         colorCard.widthAnchor.constraint(equalTo: leftColumn.widthAnchor).isActive = true
 
         let rightColumn = NSStackView(views: [frameRateCard, textStyleCard])
         rightColumn.orientation = .vertical
         rightColumn.alignment = .leading
-        rightColumn.spacing = 10
+        rightColumn.spacing = AppearanceLayout.sectionSpacing
         textStyleCard.widthAnchor.constraint(equalTo: rightColumn.widthAnchor).isActive = true
         frameRateCard.widthAnchor.constraint(equalTo: rightColumn.widthAnchor).isActive = true
 
@@ -264,15 +279,27 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         ])
         mainStack.orientation = .vertical
         mainStack.alignment = .leading
-        mainStack.spacing = 10
+        mainStack.spacing = AppearanceLayout.sectionSpacing
         mainStack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(mainStack)
 
         NSLayoutConstraint.activate([
-            mainStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            mainStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            mainStack.topAnchor.constraint(equalTo: content.topAnchor, constant: 18),
-            mainStack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -18),
+            mainStack.leadingAnchor.constraint(
+                equalTo: content.leadingAnchor,
+                constant: AppearanceLayout.horizontalInset
+            ),
+            mainStack.trailingAnchor.constraint(
+                equalTo: content.trailingAnchor,
+                constant: -AppearanceLayout.horizontalInset
+            ),
+            mainStack.topAnchor.constraint(
+                equalTo: content.topAnchor,
+                constant: AppearanceLayout.verticalInset
+            ),
+            mainStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: content.bottomAnchor,
+                constant: -AppearanceLayout.verticalInset
+            ),
             header.widthAnchor.constraint(equalTo: mainStack.widthAnchor),
             controlColumns.widthAnchor.constraint(equalTo: mainStack.widthAnchor),
             actionRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor),
@@ -427,14 +454,24 @@ final class AppearanceWindowController: NSWindowController, NSTextFieldDelegate,
         let cancel = NSButton(title: "取消", target: self, action: #selector(cancelChanges))
         cancel.keyEquivalent = "\u{1b}"
         cancel.bezelStyle = .rounded
+        cancel.font = .systemFont(ofSize: 12, weight: .medium)
         let save = NSButton(title: "保存", target: self, action: #selector(saveChanges))
         save.keyEquivalent = "\r"
         save.bezelStyle = .rounded
         save.bezelColor = AppearancePalette.actionFill
         save.contentTintColor = .white
         save.font = .systemFont(ofSize: 12, weight: .semibold)
-        save.translatesAutoresizingMaskIntoConstraints = false
-        save.widthAnchor.constraint(equalToConstant: 132).isActive = true
+        [cancel, save].forEach { button in
+            button.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(
+                    equalToConstant: AppearanceLayout.actionButtonWidth
+                ),
+                button.heightAnchor.constraint(
+                    equalToConstant: AppearanceLayout.actionButtonHeight
+                ),
+            ])
+        }
         let row = NSStackView(views: [NSView(), cancel, save])
         row.orientation = .horizontal
         row.alignment = .centerY
