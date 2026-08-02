@@ -827,7 +827,7 @@ namespace CodexQuotaBall
         {
             return limitingWindow == null
                 ? String.Empty
-                : Math.Round(limitingWindow.RemainingPercent)
+                : QuotaFormatting.RoundRemainingPercentUp(limitingWindow.RemainingPercent)
                     .ToString("0", CultureInfo.InvariantCulture) + "%";
         }
 

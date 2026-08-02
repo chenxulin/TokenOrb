@@ -97,7 +97,8 @@ namespace CodexQuotaBall
             double remaining = window.RemainingPercent;
             Color accent = UiPalette.QuotaColor(remaining);
             titleText.Text = QuotaSnapshot.FormatWindowName(window) + "额度";
-            remainingText.Text = "剩余 " + Math.Round(remaining).ToString("0", CultureInfo.InvariantCulture) + "%";
+            remainingText.Text = "剩余 " + QuotaFormatting.RoundRemainingPercentUp(remaining)
+                .ToString("0", CultureInfo.InvariantCulture) + "%";
             remainingText.Foreground = UiPalette.Brush(accent);
             bar.RemainingPercent = remaining;
             bar.AccentColor = accent;

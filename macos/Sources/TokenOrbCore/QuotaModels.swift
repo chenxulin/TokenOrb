@@ -174,7 +174,7 @@ public enum QuotaFormatting {
     private static let weeklyResetInterval: TimeInterval = 7 * 24 * 60 * 60
 
     public static func roundedPercent(_ value: Double) -> Int {
-        Int(value.rounded(.toNearestOrEven))
+        Int(value.clamped(to: 0...100).rounded(.up))
     }
 
     public static func windowName(_ window: QuotaWindow?) -> String {

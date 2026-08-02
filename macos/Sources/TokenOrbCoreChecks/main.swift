@@ -255,8 +255,10 @@ func checkFormatting() {
             == "3天16小时后",
         "weekly countdown should remain separate from the reset date"
     )
-    expect(QuotaFormatting.roundedPercent(12.5) == 12, "percentage midpoint rounds to even")
-    expect(QuotaFormatting.roundedPercent(13.5) == 14, "percentage midpoint rounds to even up")
+    expect(QuotaFormatting.roundedPercent(12) == 12, "whole percentage remains unchanged")
+    expect(QuotaFormatting.roundedPercent(12.01) == 13, "positive fractional percentage rounds up")
+    expect(QuotaFormatting.roundedPercent(0.01) == 1, "positive fractional quota never displays zero")
+    expect(QuotaFormatting.roundedPercent(0) == 0, "exhausted quota displays zero")
 }
 
 func checkAppIdentity() {

@@ -14,6 +14,11 @@ namespace CodexQuotaBall
         private const int WeeklyWindowMinutes = 7 * 24 * 60;
         private static readonly TimeSpan WeeklyResetInterval = TimeSpan.FromDays(7.0);
 
+        public static int RoundRemainingPercentUp(double remainingPercent)
+        {
+            return Convert.ToInt32(Math.Ceiling(Math.Max(0.0, Math.Min(100.0, remainingPercent))));
+        }
+
         public static DateTimeOffset? ResolveResetAt(
             QuotaWindowInfo window,
             DateTimeOffset now)

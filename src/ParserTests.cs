@@ -510,7 +510,15 @@ namespace CodexQuotaBall
                 "Missing quota should fill half of the orb with the waiting wave");
             Assert(QuotaBallVisual.FormatQuotaText(
                 new QuotaWindowInfo { UsedPercent = 31.0 }) == "69%",
-                "Available quota should render its rounded remaining percentage");
+                "Available quota should render its remaining percentage");
+            Assert(QuotaBallVisual.FormatQuotaText(
+                new QuotaWindowInfo { UsedPercent = 99.99 }) == "1%",
+                "Positive fractional quota should round up instead of displaying zero");
+            Assert(QuotaBallVisual.FormatQuotaText(
+                new QuotaWindowInfo { UsedPercent = 100.0 }) == "0%",
+                "Exhausted quota should continue to display zero");
+            Assert(QuotaFormatting.RoundRemainingPercentUp(12.01) == 13,
+                "Remaining quota should consistently round up across the interface");
         }
 
         private static void TestQuotaTextStyles()
